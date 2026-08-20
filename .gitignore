@@ -1,50 +1,50 @@
-# Prerequisites
+# 前置依赖
 *.d
 
-# Compiled Object files
+# 编译产物的目标文件
 *.slo
 *.lo
 *.o
 *.obj
 
-# Precompiled Headers
+# 预编译头
 *.gch
 *.pch
 
-# Linker files
+# 链接器文件
 *.ilk
 
-# Debugger Files
+# 调试器文件
 *.pdb
 
-# Compiled Dynamic libraries
+# 编译出的动态库
 *.so
 *.dylib
 *.dll
 *.so.*
 
 
-# Fortran module files
+# Fortran 模块文件
 *.mod
 *.smod
 
-# Compiled Static libraries
+# 编译出的静态库
 *.lai
 *.la
 *.a
 *.lib
 
-# Executables
+# 可执行文件
 *.exe
 *.out
 *.app
 
-# Build directories
+# 构建目录
 build/
 Build/
 build-*/
 
-# CMake generated files
+# CMake 生成的文件
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -52,7 +52,7 @@ Makefile
 install_manifest.txt
 compile_commands.json
 
-# Temporary files
+# 临时文件
 *.tmp
 *.log
 *.bak
@@ -61,9 +61,19 @@ compile_commands.json
 # vcpkg
 vcpkg_installed/
 
-# debug information files
+# 调试信息文件
 *.dwo
 
-# test output & cache
+# 测试输出与缓存
 Testing/
 .cache/
+
+# Node / 宿主 adapter 生成的产物（未来的 hosts/dsh）
+node_modules/
+hosts/dsh/dist/
+
+# Repo Tutor 本地状态 / 缓存
+.repo-tutor/
+
+# 额外的 CMake 输出目录
+out/

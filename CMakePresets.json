@@ -1,0 +1,49 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Dev（默认 generator）",
+      "description": "使用 CMake 的平台默认 generator（例如 Linux/macOS 上的 Unix Makefiles）。",
+      "binaryDir": "${sourceDir}/build/dev"
+    },
+    {
+      "name": "dev-mingw",
+      "displayName": "Dev（MinGW Makefiles）",
+      "description": "Windows/MinGW。使用 mingw32-make；要求 PATH 上可找到 g++。",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build/dev-mingw"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "dev-mingw",
+      "configurePreset": "dev-mingw"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-mingw",
+      "configurePreset": "dev-mingw",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
