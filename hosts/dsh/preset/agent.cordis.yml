@@ -1,0 +1,72 @@
+# The `repo-tutor` agent preset: 仓库导师模式 —— 只会教，不会替你改。
+#
+# 这是模板，装到本机用：node scripts/install-preset.mjs
+# 安装脚本会把 __REPO_TUTOR_PLUGIN__ 换成本机插件的绝对路径。
+#
+# 这是一个 AGENT-PLANE 组合。roster 会在一个 standing scope 下只挂载它一次，
+# 之后每个用这个模式的会话通过 scope 父子关系加入进来，所以这里的工具和 prompt
+# 小节覆盖每一个加入的 agent。host 组合（注册表、沙箱、持久化、模型路由）不在这里。
+#
+# 和 standard 的差别就是这份文件本身：这里**故意不装**文件系统工具、shell、
+# 网页、子代理、skill、goal、plan-mode。导师看代码只能走 tutor_evidence_read，
+# 于是"证据预算"和"冻结快照"才是真的，模型没有别的门路绕过去。
+#
+# 一行一个能力，删掉一行就少一条路；要加回 shell 之前先想清楚证据预算还算不算数。
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# 语气和身份：这里是"教"不是"替你做"。{{model}} / {{cwd}} 由 agent 自己的路由和工作目录解析。
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: >-
+      You are a repository tutor powered by the {{model}} model. The user is learning this
+      codebase and you are the teacher: your job is to make them able to read, debug and
+      change it themselves. A request to fix or change code is still a teaching request —
+      explain and guide, do not hand over a patch.
+    suffix: >-
+      The repository under study is {{cwd}}. Teach in the user's language, by guided
+      reading of real code.
+
+# ── 教学能力本体 ─────────────────────────────────────────────────────────────
+
+# C++ Core 的 DSH adapter：11 个 tutor_* 工具 + 教学 prompt 小节 + /tutor 命令。
+# 只注册工具和 prompt，不发布 service，所以不需要 isolate realm。
+# 插件自己从自己的位置倒推 build 目录里的 repo-tutor-core；显式覆盖时加 corePath。
+# alwaysOn: true 让 prompt 从"用户想学的时候你可以教"变成"这个会话就是教学会话"。
+# focusedTools: true 把宿主里全局注册的工具屏蔽掉，工具面只由这个 preset 决定。
+- id: repo-tutor
+  name: '__REPO_TUTOR_PLUGIN__'
+  config:
+    alwaysOn: true
+    focusedTools: true
+
+# 提问卡：确认学习地图、确认起点、出理解检查都靠它。
+# 没有这个，题目只能埋在正文末尾，学习者拿不到输入框。
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+# 长会话要能压缩。`compaction-basic` 通过 ctx.get 读 `toolResultPrune`，
+# 所以 pruner 必须和它同一个 realm，不能放在外面。
+# `tokenMeter` 故意不在这里：量表是 host 面的，本组合里这些行解析的是那一个实例。
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024

@@ -4,10 +4,52 @@
 // 教学状态机、判分、证据预算、Question 契约全在 C++ Core 里，这里一行都不写。
 // 唯一算"内容"的东西是工具描述和阻断提示的措辞——那是给模型看的说明书。
 
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { CoreClient } from './core-client.mjs'
 
 export const name = 'repo-tutor-dsh'
 export const inject = ['tools']
+
+// 从插件自己的位置倒推 Core 可执行文件：<repo>/hosts/dsh/src/index.js
+// → <repo>/build/<preset>/apps/repo-tutor-core/…。这样装进 agent preset 时
+// 不需要任何环境变量，行配置里也可以显式覆盖。
+const pluginDir = dirname(fileURLToPath(import.meta.url))
+const repoRoot = resolve(pluginDir, '..', '..', '..')
+const isWindows = process.platform === 'win32'
+
+function builtCorePath() {
+  const preset = isWindows ? 'dev-mingw' : 'dev'
+  return join(
+    repoRoot,
+    'build',
+    preset,
+    'apps',
+    'repo-tutor-core',
+    isWindows ? 'repo-tutor-core.exe' : 'repo-tutor-core',
+  )
+}
+
+function resolveCorePath(config) {
+  const configured = typeof config?.corePath === 'string' ? config.corePath : undefined
+  for (const candidate of [configured, process.env.REPO_TUTOR_CORE, builtCorePath()]) {
+    if (candidate !== undefined && candidate !== '' && existsSync(candidate)) {
+      return candidate
+    }
+  }
+  throw new Error(
+    `repo-tutor-dsh: repo-tutor-core not found. Build it (cmake --preset dev-mingw && cmake --build --preset dev-mingw), ` +
+      `set REPO_TUTOR_CORE, or set corePath in the plugin row. Looked at: ${[
+        configured,
+        process.env.REPO_TUTOR_CORE,
+        builtCorePath(),
+      ]
+        .filter((value) => value !== undefined && value !== '')
+        .join(', ')}`,
+  )
+}
 
 // Core 返回的 blocked 是正常业务结果，不是工具失败。
 // 这里只把 reason 翻译成一句"下一步该干嘛"，状态判断依然在 Core。
@@ -75,10 +117,16 @@ const QUESTION_TYPES = [
 
 // 教学 prompt。只加一小节：什么时候用、循环长什么样、Core 拦什么。
 // 具体的状态转移由 Core 兜底，这里不重复。
-const GUIDANCE = `## Repo Tutor
+//
+// 开头那段是唯一随模式变化的部分：装进普通模式时是"用户想学时你可以教"，
+// 装进专用的导师模式（preset 里 alwaysOn）时是"这个会话就是教学会话"。
+const GUIDANCE_TRIGGER =
+  'You are also a repository tutor. When the user wants to understand an unfamiliar codebase — get oriented, learn how a mechanism works, be able to debug or change it — run the tutor loop through the tutor_* tools. A written summary does not build a mental model; guided reading does.'
 
-You are also a repository tutor. When the user wants to understand an unfamiliar codebase — get oriented, learn how a mechanism works, be able to debug or change it — run the tutor loop through the tutor_* tools. A written summary does not build a mental model; guided reading does.
+const GUIDANCE_ALWAYS =
+  'You are a repository tutor, and this whole session is a tutoring session. The user is the learner and the workspace is the repository under study. A request to change or fix code is still a teaching request: your job is to make the learner able to do it themselves, not to do it for them. Run everything through the tutor_* tools — a written summary does not build a mental model, guided reading does.'
 
+const GUIDANCE_BODY = `
 The loop:
 
 1. \`tutor_status\`, then \`tutor_scan_repository\`.
@@ -128,10 +176,64 @@ function formatStatus(state) {
   return lines.join('\n')
 }
 
-export function apply(ctx) {
-  const exePath = process.env.REPO_TUTOR_CORE
-  if (exePath === undefined || exePath === '') {
-    throw new Error('repo-tutor-dsh: REPO_TUTOR_CORE must point at the repo-tutor-core executable')
+// 全局工具里要留给导师模式的（提问卡最典型：它自带提问框，模式再窄也得留）。
+const GLOBAL_TOOL_KEEP = new Set(['ask_user_question'])
+
+// DSH 的保留传输名，restrict 不接受，别塞进 mask。
+const RESERVED_TOOL_NAMES = new Set(['run_code'])
+
+// 只留这个 preset 自己注册的工具：把宿主里全局注册的（用户装的 CAD 之类的）屏蔽掉。
+// 屏蔽失败不致命——导师照样能教，只是工具面松一点，所以只记日志不上抛。
+function installGlobalToolMask(ctx) {
+  const tools = ctx.get('tools')
+  if (tools === undefined || typeof tools.restrict !== 'function' || typeof tools.schemas !== 'function') {
+    return
+  }
+
+  let disposeMask = null
+  const refresh = () => {
+    let names
+    try {
+      // 不带 scope 的 schemas() 就是全局视图。
+      names = tools.schemas().map((schema) => schema.name)
+    } catch (error) {
+      console.error(`[repo-tutor] 读全局工具清单失败：${error.message}`)
+      return
+    }
+
+    const deny = names.filter(
+      (name) => !GLOBAL_TOOL_KEEP.has(name) && !RESERVED_TOOL_NAMES.has(name),
+    )
+    if (deny.length === 0) {
+      return
+    }
+
+    try {
+      const dispose = tools.restrict({ deny })
+      disposeMask?.()
+      disposeMask = dispose
+    } catch (error) {
+      console.error(`[repo-tutor] 屏蔽全局工具失败：${error.message}`)
+    }
+  }
+
+  refresh()
+  // 全局工具可能在 apply 之后才挂上来，跟着变（Cordis 会随 fiber 一起回收这个监听）。
+  ctx.on('tools/change', refresh)
+  ctx.effect(() => () => disposeMask?.())
+}
+
+export function apply(ctx, config) {
+  const exePath = resolveCorePath(config)
+  // 专用导师模式（preset 里 alwaysOn: true）：整段会话都是教学，没有"是否触发"这一说。
+  const alwaysOn = config?.alwaysOn === true
+  const guidance = `## Repo Tutor\n\n${alwaysOn ? GUIDANCE_ALWAYS : GUIDANCE_TRIGGER}${GUIDANCE_BODY}`
+
+  // focusedTools：把宿主里全局注册的工具（比如用户自己装的 CAD 插件）从本模式里屏蔽掉。
+  // 导师模式的工具面只应该由这个 preset 自己决定，不然"边界"就只是嘴上说说。
+  // 只屏蔽全局工具，preset 自己注册的（tutor_* / ask_user_question）不受影响。
+  if (config?.focusedTools === true) {
+    installGlobalToolMask(ctx)
   }
 
   // 一个仓库根一份 Core。同一个仓库的两个对话共享同一份学习状态，
@@ -452,7 +554,7 @@ export function apply(ctx) {
       name: 'repo-tutor',
       order: 2450,
       interpolate: false,
-      text: GUIDANCE,
+      text: guidance,
     })
   })
 

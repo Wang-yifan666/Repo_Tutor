@@ -13,6 +13,35 @@ Question 契约全在 `core/` 里。
 - `cordis.patch.yml`：装进 profile 用的 bundle 层。
 - `overlay.local.yml`：本地开发用 `--patch` overlay（绝对路径，已 gitignore）。
 
+## 第五个模式：仓库导师模式
+
+DSH 自带四个模式（标准 / PTC / 极简 / 创造），都从"编码 Agent"出发。仓库导师模式是
+第五个，也是最窄的一个：**它只会教，不会替你改**。选了这个模式，整段会话就是教学会话，
+不需要模型自己判断"这一句是不是学习请求"——触发边界因此消失。
+
+装到本机：
+
+```sh
+node scripts/install-preset.mjs      # 装到 $DSH_HOME/.agent-presets/repo-tutor
+```
+
+装完不用重启：DSH 的 roster 每次调用都重读目录，新开会话时模式选择器里就有
+「仓库导师模式」。模板在 `hosts/dsh/preset/`，改完重跑脚本即可。
+
+它和标准模式的差别全在那份组合文件里：
+
+| | 标准模式 | 仓库导师模式 |
+|---|---|---|
+| 看代码 | `read` / `grep` / `glob` / shell 都能看 | **只有** `tutor_evidence_read`，走证据预算 |
+| 改代码 | 能改 | 没有任何写工具 |
+| 提问 | `ask_user_question` | 同左，且是主要交互方式 |
+| 教学 prompt | 一小节，条件触发 | 常驻，`alwaysOn: true` |
+| 全局工具 | 全部可见 | 屏蔽（`focusedTools: true`），工具面只由 preset 决定 |
+
+工作原理不是改 DSH：preset 就是一个 `agent.cordis.yml`，里面只装 `persona` +
+`repo-tutor` 插件行 + `tool-ask-user` + compaction 一组。没有 fs / shell / web /
+子代理 / skill / goal / plan-mode 行，模型就**没有别的门路**绕过证据预算。
+
 ## 先试试
 
 一条命令起一个带插件的 DSH Web，你要读的仓库同时是 workspace 和 tutor 的仓库根：

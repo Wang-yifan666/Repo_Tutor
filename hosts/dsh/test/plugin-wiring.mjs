@@ -33,7 +33,9 @@ if (process.env.REPO_TUTOR_ROOT !== undefined && process.env.REPO_TUTOR_ROOT !==
   process.exit(1)
 }
 
-process.env.REPO_TUTOR_CORE = exePath
+// 故意不设 REPO_TUTOR_CORE：装进 agent preset 时没有环境变量可用，
+// 插件得自己从自己的位置倒推出 build 目录里的可执行文件。
+delete process.env.REPO_TUTOR_CORE
 
 // ── 一个够用的假 ctx：记录注册，并允许我们晚一点"把服务挂上来" ──────────────
 
