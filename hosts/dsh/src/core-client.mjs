@@ -9,14 +9,24 @@ export class CoreClient {
   #lines
   #nextId = 1
   #pending = new Map()
+  #stderrRest = ''
 
   constructor(exePath, { onStderr } = {}) {
     this.#core = spawn(exePath, [], { stdio: ['pipe', 'pipe', 'pipe'] })
 
     this.#core.on('error', (error) => this.#failAll(error))
     this.#core.on('exit', () => this.#failAll(new Error('core process exited')))
+    // stderr 按整行交出去：chunk 边界不该落在行中间，不然日志会被切碎，
+    // 想从日志里读协议轨迹的时候全是断句。
     this.#core.stderr.on('data', (chunk) => {
-      onStderr?.(chunk.toString())
+      this.#stderrRest += chunk.toString()
+      let newline = this.#stderrRest.indexOf('\n')
+      while (newline !== -1) {
+        const line = this.#stderrRest.slice(0, newline).trimEnd()
+        this.#stderrRest = this.#stderrRest.slice(newline + 1)
+        onStderr?.(line)
+        newline = this.#stderrRest.indexOf('\n')
+      }
     })
 
     this.#lines = createInterface({ input: this.#core.stdout, crlfDelay: Infinity })

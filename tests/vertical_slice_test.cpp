@@ -91,7 +91,8 @@ int main(int argc, char** argv)
 	requests += "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"protocol.negotiate\",\"params\":{}}\n";
 	requests +=
 	    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session.start\",\"params\":{\"coverage\":"
-	    "\"core_path\",\"defaultDepth\":\"d2_working\"}}\n";
+	    "\"core_path\",\"defaultDepth\":\"d2_working\",\"root\":\"" +
+	    root_json + "\"}}\n";
 	requests +=
 	    "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"repository.scan\",\"params\":{\"root\":\""
 	    + root_json + "\"}}\n";
@@ -172,6 +173,9 @@ int main(int argc, char** argv)
 	check(contains(lines[4], "\"status\":\"opened\""), "unit.open should be allowed");
 	check(contains(lines[5], "\"status\":\"recorded\""), "evidence.read should record");
 	check(contains(lines[5], "\"filesRead\":1"), "one evidence file should be read");
+	// 教学过程要拿到源码，不然单元里没法读代码。
+	check(contains(lines[5], "int main() { return 0; }"),
+	      "evidence.read should return the actual source line");
 	check(contains(lines[6], "\"status\":\"created\""), "question.create should succeed");
 	check(contains(lines[6], "\"evidenceCount\":1"),
 	      "question should freeze the one evidence file read before it");
@@ -181,6 +185,10 @@ int main(int argc, char** argv)
 	check(contains(lines[8], "\"status\":\"recorded\""), "answer.submit should record the answer");
 	check(contains(lines[8], "\"evidenceCount\":1"),
 	      "answer context must use only the frozen evidence snapshot");
+	check(contains(lines[8], "\"path\":\"src/main.cpp\""),
+	      "answer context should name the frozen evidence file");
+	check(!contains(lines[8], "README.md"),
+	      "answer context must not leak evidence read after the question");
 	check(contains(lines[9], "\"status\":\"recorded\""), "evaluation.record should succeed");
 	check(contains(lines[9], "\"correct\":true"), "evaluation should keep the verdict");
 	check(contains(lines[10], "\"status\":\"completed\""), "unit.complete should mark completed");

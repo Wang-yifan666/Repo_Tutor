@@ -2,10 +2,14 @@
 
 #include <algorithm>
 #include <exception>
+#include <map>
+#include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "repo_tutor/depth.hpp"
+#include "repo_tutor/evidence_reader.hpp"
 #include "repo_tutor/topic_lock.hpp"
 
 namespace repo_tutor::protocol
@@ -91,6 +95,25 @@ json::Value blocked_result(const std::string& reason)
 	return result;
 }
 
+// evidence_reader 的失败原因 -> 协议里的 reason 字符串。
+std::string evidence_status_reason(EvidenceSlice::Status status)
+{
+	switch(status)
+	{
+	case EvidenceSlice::Status::ok:
+		return {};
+	case EvidenceSlice::Status::blocked_no_root:
+		return "NO_ROOT";
+	case EvidenceSlice::Status::blocked_escape:
+		return "ESCAPE";
+	case EvidenceSlice::Status::blocked_missing:
+		return "FILE_NOT_FOUND";
+	case EvidenceSlice::Status::blocked_not_file:
+		return "NOT_A_FILE";
+	}
+	return "FILE_NOT_FOUND";
+}
+
 } // namespace
 
 DepthProfile depth_from_string(const std::string& name)
@@ -165,7 +188,25 @@ LearningUnit* Server::find_unit(const std::string& unit_id)
 	return nullptr;
 }
 
+void Server::set_trace(TraceHandler trace)
+{
+	trace_ = std::move(trace);
+}
+
 std::string Server::handle_line(const std::string& line)
+{
+	std::string method;
+	const std::string response = handle_line_inner(line, method);
+
+	// 轨迹挂在最外层：不管这条请求从哪个分支返回，都能被看到。
+	if(trace_ && !response.empty())
+	{
+		trace_(method, response);
+	}
+	return response;
+}
+
+std::string Server::handle_line_inner(const std::string& line, std::string& method_out)
 {
 	if(line.empty())
 	{
@@ -201,6 +242,7 @@ std::string Server::handle_line(const std::string& line)
 
 	const json::Value* id = json::find_member(request, "id");
 	const std::string method = json::string_member(request, "method");
+	method_out = method;
 
 	// 通知（没有 id）M2 不回应。
 	if(id == nullptr)
@@ -318,6 +360,9 @@ json::Value Server::handle_session_start(const json::Value& params)
 	session_.coverage = coverage_from_string(json::string_member(params, "coverage"));
 	session_.depth.default_depth = depth_from_string(json::string_member(params, "defaultDepth"));
 
+	// 会话可以先认一个仓库根；不认也行，等 repository.scan 定。
+	root_ = json::string_member(params, "root");
+
 	if(const auto* units = json::array_member(params, "units"))
 	{
 		for(const auto& unit_value: *units)
@@ -335,6 +380,7 @@ json::Value Server::handle_session_start(const json::Value& params)
 	evidence_ = EvidenceBudget{};
 	evidence_.cognitive_goal = "";
 	evidence_.depth = session_.depth.current();
+	question_.reset();
 	session_started_ = true;
 
 	json::Value result = make_object();
@@ -342,6 +388,7 @@ json::Value Server::handle_session_start(const json::Value& params)
 	result.object.emplace_back("coverage", make_string(coverage_to_string(session_.coverage)));
 	result.object.emplace_back("currentDepth",
 	                           make_string(depth_to_string(session_.depth.current())));
+	result.object.emplace_back("root", make_string(root_));
 	return result;
 }
 
@@ -357,6 +404,7 @@ json::Value Server::handle_session_get(const json::Value& /*params*/)
 	result.object.emplace_back("coverage", make_string(coverage_to_string(session_.coverage)));
 	result.object.emplace_back("currentDepth",
 	                           make_string(depth_to_string(session_.depth.current())));
+	result.object.emplace_back("root", make_string(root_));
 
 	json::Value units = make_array();
 	for(const auto& unit: session_.units)
@@ -372,6 +420,14 @@ json::Value Server::handle_session_get(const json::Value& /*params*/)
 	result.object.emplace_back(
 	    "currentUnitId",
 	    session_.current_unit_id.has_value() ? make_string(*session_.current_unit_id) : make_null());
+
+	// 模型靠这两个数字判断"证据够不够、要不要再读"。
+	result.object.emplace_back("filesRead",
+	                           make_number(static_cast<double>(evidence_.files_read())));
+	result.object.emplace_back("ledgerSize",
+	                           make_number(static_cast<double>(evidence_.ledger.size())));
+	result.object.emplace_back("openQuestionId",
+	                           question_.has_value() ? make_string(question_->id) : make_null());
 
 	return result;
 }
@@ -406,6 +462,9 @@ json::Value Server::handle_unit_open(const json::Value& params)
 		unit->status = LearningUnitStatus::in_progress;
 	}
 
+	// 换单元了，上一个单元的题作废：它冻结的证据是上一个单元的。
+	question_.reset();
+
 	json::Value result = make_object();
 	result.object.emplace_back("status", make_string("opened"));
 	result.object.emplace_back("unitId", make_string(unit_id));
@@ -426,11 +485,19 @@ json::Value Server::handle_unit_complete(const json::Value& params)
 		return blocked_result("UNKNOWN_UNIT");
 	}
 
+	// 只能结当前单元。别绕过 Topic Lock 去结一个没开过的单元。
+	if(!session_.current_unit_id.has_value() || *session_.current_unit_id != unit_id)
+	{
+		return blocked_result("UNIT_NOT_OPEN");
+	}
+
 	unit->status = LearningUnitStatus::completed;
+	question_.reset();
 
 	json::Value result = make_object();
 	result.object.emplace_back("status", make_string("completed"));
 	result.object.emplace_back("unitId", make_string(unit_id));
+	result.object.emplace_back("revision", make_number(static_cast<double>(session_.revision)));
 	return result;
 }
 
@@ -485,11 +552,34 @@ json::Value Server::handle_evidence_read(const json::Value& params)
 		return blocked_result("NO_SESSION");
 	}
 
+	// 证据是为了当前认知目标读的。没有打开的单元，就没有认知目标。
+	if(!session_.current_unit_id.has_value())
+	{
+		return blocked_result("UNIT_NOT_OPEN");
+	}
+
+	const std::string path = json::string_member(params, "path");
+	if(path.empty())
+	{
+		return blocked_result("MISSING_PATH");
+	}
+
+	const int line_start = static_cast<int>(json::number_member(params, "lineStart"));
+	const int line_end = static_cast<int>(json::number_member(params, "lineEnd"));
+	const std::string rationale = json::string_member(params, "rationale");
+
+	// 先真读到，再记账。读不出来的东西不算证据。
+	const EvidenceSlice slice = read_evidence_slice(root_, path, line_start, line_end);
+	if(slice.status != EvidenceSlice::Status::ok)
+	{
+		return blocked_result(evidence_status_reason(slice.status));
+	}
+
 	EvidenceEntry entry;
-	entry.relative_path = json::string_member(params, "path");
-	entry.line_start = static_cast<int>(json::number_member(params, "lineStart"));
-	entry.line_end = static_cast<int>(json::number_member(params, "lineEnd"));
-	entry.rationale = json::string_member(params, "rationale");
+	entry.relative_path = path;
+	entry.line_start = slice.first_line;
+	entry.line_end = slice.last_line;
+	entry.rationale = rationale;
 
 	if(record_evidence(evidence_, std::move(entry)) == EvidenceRecordResult::blocked_escape)
 	{
@@ -498,34 +588,100 @@ json::Value Server::handle_evidence_read(const json::Value& params)
 
 	json::Value result = make_object();
 	result.object.emplace_back("status", make_string("recorded"));
+	result.object.emplace_back("path", make_string(path));
+	result.object.emplace_back("lineStart", make_number(static_cast<double>(slice.first_line)));
+	result.object.emplace_back("lineEnd", make_number(static_cast<double>(slice.last_line)));
+	result.object.emplace_back("totalLines", make_number(static_cast<double>(slice.total_lines)));
+	result.object.emplace_back("truncated", make_boolean(slice.truncated));
+	result.object.emplace_back("content", make_string(slice.content));
 	result.object.emplace_back("filesRead",
 	                           make_number(static_cast<double>(evidence_.files_read())));
 	result.object.emplace_back("ledgerSize",
 	                           make_number(static_cast<double>(evidence_.ledger.size())));
+	result.object.emplace_back("softFileCap",
+	                           make_number(static_cast<double>(soft_file_cap(evidence_.depth))));
 	return result;
 }
 
 json::Value Server::handle_repository_scan(const json::Value& params)
 {
-	const std::string root = json::string_member(params, "root");
+	std::string root = json::string_member(params, "root");
+	if(root.empty())
+	{
+		// 会话已经认过仓库根，就沿着它扫。
+		root = root_;
+	}
 	if(root.empty())
 	{
 		return blocked_result("MISSING_ROOT");
 	}
 
 	repository_ = scan_repository(root);
+	if(repository_.root.empty())
+	{
+		return blocked_result("ROOT_NOT_READABLE");
+	}
+	// 扫描拿到的是规范化后的绝对路径，evidence.read 之后都按它算。
+	root_ = repository_.root;
 
-	// 文件清单截断到前 50 个，避免响应过大。
-	constexpr std::size_t kMaxFilesInResponse = 50;
+	// 文件清单截断，避免响应过大；语言分布和顶层目录给全，模型靠它们切单元。
+	constexpr std::size_t kMaxFilesInResponse = 80;
+	constexpr std::size_t kMaxDirectories = 60;
 	const std::size_t count = std::min(repository_.files.size(), kMaxFilesInResponse);
 
 	json::Value files = make_array();
-	for(std::size_t i = 0; i < count; ++i)
+	std::map<std::string, std::size_t> language_counts;
+	std::set<std::string> directories;
+
+	for(std::size_t i = 0; i < repository_.files.size(); ++i)
 	{
-		json::Value file = make_object();
-		file.object.emplace_back("path", make_string(repository_.files[i].relative_path));
-		file.object.emplace_back("language", make_string(repository_.files[i].language));
-		files.array.push_back(std::move(file));
+		const RepositoryFile& file = repository_.files[i];
+		++language_counts[file.language];
+
+		const std::size_t slash = file.relative_path.find('/');
+		if(slash != std::string::npos)
+		{
+			directories.insert(file.relative_path.substr(0, slash));
+		}
+
+		if(i < count)
+		{
+			json::Value file_value = make_object();
+			file_value.object.emplace_back("path", make_string(file.relative_path));
+			file_value.object.emplace_back("language", make_string(file.language));
+			files.array.push_back(std::move(file_value));
+		}
+	}
+
+	// 按数量从多到少排，同数量的按名字排，保证同样的仓库每次输出一样。
+	std::vector<std::pair<std::string, std::size_t>> languages(language_counts.begin(),
+	                                                           language_counts.end());
+	std::sort(languages.begin(), languages.end(),
+	          [](const auto& left, const auto& right) {
+		          if(left.second != right.second)
+		          {
+			          return left.second > right.second;
+		          }
+		          return left.first < right.first;
+	          });
+
+	json::Value language_values = make_array();
+	for(const auto& [language, how_many]: languages)
+	{
+		json::Value entry = make_object();
+		entry.object.emplace_back("language", make_string(language));
+		entry.object.emplace_back("fileCount", make_number(static_cast<double>(how_many)));
+		language_values.array.push_back(std::move(entry));
+	}
+
+	json::Value directory_values = make_array();
+	for(const auto& directory: directories)
+	{
+		if(directory_values.array.size() >= kMaxDirectories)
+		{
+			break;
+		}
+		directory_values.array.push_back(make_string(directory));
 	}
 
 	json::Value result = make_object();
@@ -534,6 +690,8 @@ json::Value Server::handle_repository_scan(const json::Value& params)
 	result.object.emplace_back("fileCount",
 	                           make_number(static_cast<double>(repository_.files.size())));
 	result.object.emplace_back("files", std::move(files));
+	result.object.emplace_back("languages", std::move(language_values));
+	result.object.emplace_back("directories", std::move(directory_values));
 	result.object.emplace_back("truncated",
 	                           make_boolean(repository_.files.size() > kMaxFilesInResponse));
 	return result;
@@ -631,6 +789,8 @@ json::Value Server::handle_question_create(const json::Value& params)
 	json::Value result = make_object();
 	result.object.emplace_back("status", make_string("created"));
 	result.object.emplace_back("questionId", make_string(question_->id));
+	result.object.emplace_back("unitId", make_string(question_->unit_id));
+	result.object.emplace_back("type", make_string(to_string(question_->type)));
 	result.object.emplace_back("evidenceSnapshotId", make_string(question_->evidence_snapshot_id));
 	result.object.emplace_back("evidenceCount",
 	                           make_number(static_cast<double>(question_->evidence.size())));
@@ -663,12 +823,28 @@ json::Value Server::handle_answer_submit(const json::Value& params)
 	}
 
 	// 返回评估上下文。evidence 只用冻结的那份，不含提问后新读的证据。
+	json::Value frozen = make_array();
+	for(const auto& entry: question_->evidence)
+	{
+		json::Value entry_value = make_object();
+		entry_value.object.emplace_back("path", make_string(entry.relative_path));
+		entry_value.object.emplace_back("lineStart", make_number(static_cast<double>(entry.line_start)));
+		entry_value.object.emplace_back("lineEnd", make_number(static_cast<double>(entry.line_end)));
+		entry_value.object.emplace_back("rationale", make_string(entry.rationale));
+		frozen.array.push_back(std::move(entry_value));
+	}
+
 	json::Value result = make_object();
 	result.object.emplace_back("status", make_string("recorded"));
 	result.object.emplace_back("questionId", make_string(question_->id));
+	result.object.emplace_back("unitId", make_string(question_->unit_id));
+	result.object.emplace_back("type", make_string(to_string(question_->type)));
 	result.object.emplace_back("premise", make_string(question_->premise));
+	result.object.emplace_back("answer", make_string(answer));
 	result.object.emplace_back("evaluationMode", make_string(to_string(question_->evaluation_mode)));
 	result.object.emplace_back("evaluationCriteria", make_string(question_->evaluation_criteria));
+	result.object.emplace_back("evidenceSnapshotId", make_string(question_->evidence_snapshot_id));
+	result.object.emplace_back("evidence", std::move(frozen));
 	result.object.emplace_back("evidenceCount",
 	                           make_number(static_cast<double>(question_->evidence.size())));
 	result.object.emplace_back("createdAtRevision",

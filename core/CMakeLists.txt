@@ -6,6 +6,7 @@ add_library(repo_tutor_core STATIC
   src/depth.cpp
   src/repository_map.cpp
   src/evidence_budget.cpp
+  src/evidence_reader.cpp
   src/question.cpp
 )
 add_library(repo_tutor::core ALIAS repo_tutor_core)

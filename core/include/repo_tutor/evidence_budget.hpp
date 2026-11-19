@@ -41,6 +41,11 @@ enum class EvidenceRecordResult
 	blocked_escape, // 空路径、绝对路径，或带 .. 的逃逸路径
 };
 
+// 这条相对路径能不能进仓库读。规则只在这里写一遍：
+// 不能为空、不能是绝对路径（含 Windows 盘符）、不能有 .. 段、不能有空段。
+// evidence_reader 也用这一条，免得两处规则慢慢走偏。
+bool is_safe_relative_path(const std::string& path);
+
 // 记录一次证据读取。只接受仓库内的相对路径。
 EvidenceRecordResult record_evidence(EvidenceBudget& budget, EvidenceEntry entry);
 

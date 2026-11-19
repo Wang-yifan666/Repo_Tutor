@@ -6,9 +6,6 @@
 namespace repo_tutor
 {
 
-namespace
-{
-
 // 只接受仓库内的相对路径：不能为空、不能是绝对路径、不能有 .. 段。
 bool is_safe_relative_path(const std::string& path)
 {
@@ -48,8 +45,6 @@ bool is_safe_relative_path(const std::string& path)
 	}
 	return true;
 }
-
-} // namespace
 
 std::size_t EvidenceBudget::files_read() const
 {

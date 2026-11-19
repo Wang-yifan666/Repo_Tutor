@@ -70,10 +70,24 @@ int main(int argc, char** argv)
 
 	const std::string exe_path = argv[1];
 
+	// 证据读取要真读文件，所以先造一个最小仓库。
+	const auto suffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+	const auto fixture_root =
+	    std::filesystem::temp_directory_path() / ("repo_tutor_blackbox_" + suffix);
+	std::filesystem::create_directories(fixture_root / "src");
+	{
+		std::ofstream source(fixture_root / "src" / "main.cpp");
+		check(static_cast<bool>(source), "fixture file should be writable");
+		source << "int main()\n{\n\treturn 0;\n}\n";
+	}
+
+	const std::string root_json = fixture_root.generic_string();
+
 	// 一行一个 JSON-RPC 请求。顺序就是协议该有的顺序。
 	const std::string requests =
 	    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"protocol.negotiate\",\"params\":{}}\n"
 	    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session.start\",\"params\":{\"coverage\":\"core_path\","
+	    "\"root\":\"" + root_json + "\","
 	    "\"units\":[{\"id\":\"unit-a\",\"cognitiveGoal\":\"how the parser works\"},"
 	    "{\"id\":\"unit-b\",\"cognitiveGoal\":\"how the lexer works\"}]}}\n"
 	    "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"unit.open\",\"params\":{\"unitId\":\"unit-a\"}}\n"
@@ -85,10 +99,10 @@ int main(int argc, char** argv)
 	    "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"evidence.read\",\"params\":{\"path\":\"../etc/passwd\","
 	    "\"rationale\":\"escape\"}}\n"
 	    "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"evidence.read\",\"params\":{\"path\":\"src/main.cpp\","
-	    "\"lineStart\":1,\"lineEnd\":10,\"rationale\":\"entry\"}}\n"
-	    "{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"no.such.method\",\"params\":{}}\n";
+	    "\"lineStart\":1,\"lineEnd\":2,\"rationale\":\"entry\"}}\n"
+	    "{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"no.such.method\",\"params\":{}}\n"
+	    "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"unit.complete\",\"params\":{\"unitId\":\"unit-a\"}}\n";
 
-	const auto suffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
 	const auto temp_dir = std::filesystem::temp_directory_path();
 	const std::string input_path =
 	    (temp_dir / ("repo_tutor_protocol_in_" + suffix + ".jsonl")).string();
@@ -125,7 +139,7 @@ int main(int argc, char** argv)
 	check(exit_code == 0, "protocol process should exit with code 0");
 
 	const std::vector<std::string> lines = split_lines(read_file(output_path));
-	check(lines.size() == 11, "should get exactly one response per request");
+	check(lines.size() == 12, "should get exactly one response per request");
 
 	check(contains(lines[0], "\"protocolVersion\":\"0.1\""),
 	      "negotiate should report protocol version");
@@ -143,8 +157,17 @@ int main(int argc, char** argv)
 	check(contains(lines[8], "\"reason\":\"ESCAPE\""), "escaping evidence path should be blocked");
 	check(contains(lines[9], "\"status\":\"recorded\""), "safe evidence should be recorded");
 	check(contains(lines[9], "\"filesRead\":1"), "recording one file should report one file read");
+	// 读证据要真的把代码带回来，不然教学过程看不到源码。
+	check(contains(lines[9], "\"content\""), "evidence.read should return the file slice");
+	check(contains(lines[9], "int main()"), "evidence content should be the real source lines");
+	check(contains(lines[9], "\"lineStart\":1"), "evidence should report the lines it actually read");
+	check(contains(lines[9], "\"lineEnd\":2"), "evidence range should be honoured");
+	check(contains(lines[9], "\"totalLines\":4"), "evidence should report the file length");
 	check(contains(lines[10], "\"code\":-32601"), "unknown method should be method-not-found");
+	check(contains(lines[11], "\"reason\":\"UNIT_NOT_OPEN\""),
+	      "completing a unit that is not open should be blocked");
 
+	std::filesystem::remove_all(fixture_root);
 	std::remove(input_path.c_str());
 	std::remove(output_path.c_str());
 
