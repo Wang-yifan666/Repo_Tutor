@@ -39,6 +39,10 @@ run(process.execPath, [join(root, 'hosts', 'dsh', 'test', 'client-smoke.mjs'), e
 //     仓库根取自会话的工作目录而不是宿主进程 cwd。
 run(process.execPath, [join(root, 'hosts', 'dsh', 'test', 'plugin-wiring.mjs'), exePath])
 
+// 3.6 发布自检：npm pack 白名单、解包、导师模式安装器、从解包目录驱动真实 Core。
+//     这一步只在仓库里有意义（包里不带 test/），所以放在 repo 的 smoke 里跑。
+run(process.execPath, [join(root, 'hosts', 'dsh', 'scripts', 'verify-package.mjs'), '--core', exePath])
+
 // 4. 模型驱动验证是可选的：要 DSH checkout，还会真的调模型。
 if (process.argv.includes('--model')) {
   if (process.env.DSH_HARNESS === undefined || process.env.DSH_HARNESS === '') {

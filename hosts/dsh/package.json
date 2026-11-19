@@ -1,9 +1,54 @@
 {
   "name": "repo-tutor-dsh",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Interactive repository tutor for DSH: a C++ teaching state machine (Learning Units, evidence budget, frozen question snapshots) behind tutor tools and a Tutor agent mode.",
   "type": "module",
   "main": "src/index.js",
-  "files": ["src", "cordis.patch.yml"],
+  "exports": {
+    ".": "./src/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./policies/tutor-prompt.md": "./policies/tutor-prompt.md",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "repo-tutor-install-preset": "./scripts/install-preset.mjs"
+  },
+  "files": [
+    "src",
+    "policies",
+    "preset",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-bundle",
+    "cordis",
+    "cordis-plugin",
+    "tutor",
+    "teaching",
+    "codebase-onboarding",
+    "mental-model"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Wang-yifan666/Repo_Tutor.git",
+    "directory": "hosts/dsh"
+  },
+  "homepage": "https://github.com/Wang-yifan666/Repo_Tutor#readme",
+  "bugs": {
+    "url": "https://github.com/Wang-yifan666/Repo_Tutor/issues"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.1.6-alpha.1 <0.2.0"
+  },
+  "scripts": {
+    "verify": "node scripts/verify-package.mjs"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

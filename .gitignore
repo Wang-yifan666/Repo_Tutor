@@ -72,6 +72,9 @@ Testing/
 node_modules/
 hosts/dsh/dist/
 
+# npm pack 出来的 tarball（发布前本地验证用，不入库）
+*.tgz
+
 # 本地开发 overlay（绝对路径，机器特定）
 hosts/dsh/overlay.local.yml
 

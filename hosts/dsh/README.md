@@ -1,92 +1,66 @@
-# Repo Tutor 的 DSH Adapter
+# repo-tutor-dsh
 
-DSH 是 Repo Tutor 的第一个 Host。这一层只做宿主相关的事：spawn C++ Core、
-把调用转发成 JSON-RPC、管理 Core 生命周期。判分、状态机、证据预算、
-Question 契约全在 `core/` 里。
+Repo Tutor 的 DSH 插件包：11 个 `tutor_*` 工具、一节教学 prompt、一个 `/tutor` 命令，
+外加「导师模式」的 agent preset。
 
-## 结构
+它**自身不含教学逻辑**。判分、状态机、证据预算、Question 契约都在 C++ Core
+（`repo-tutor-core`）里，这一层只做三件事：spawn Core、把工具调用转发成 JSON-RPC、
+卸载时关掉 Core。
 
-- `src/core-client.mjs`：spawn `repo-tutor-core`，逐行收发 JSON-RPC。
-- `src/index.js`：Cordis 插件，注册 11 个工具 + 教学 prompt 小节 + `/tutor` 命令。
-- `test/client-smoke.mjs`：不依赖 DSH 的协议走查（scan → map → unit → evidence →
-  问题 → 评价 → 完成 → 下一个单元）。
-- `cordis.patch.yml`：装进 profile 用的 bundle 层。
-- `overlay.local.yml`：本地开发用 `--patch` overlay（绝对路径，已 gitignore）。
+## 你需要什么
 
-## 第五个模式：导师模式
-
-DSH 自带四个模式（标准 / PTC / 极简 / 创造），都从"编码 Agent"出发。导师模式是
-第五个，也是最窄的一个：**它只会教，不会替你改**。选了这个模式，整段会话就是教学会话，
-不需要模型自己判断"这一句是不是学习请求"——触发边界因此消失。
-
-装到本机：
-
-```sh
-node scripts/install-preset.mjs      # 装到 $DSH_HOME/.agent-presets/repo-tutor
-```
-
-**改名不用重启，改行为要重启。** roster 每次都重读目录，所以显示名、说明立刻生效；
-但 preset 一旦被某个会话挂载过，这份组合就钉在那个进程里直到进程退出
-（DSH 的 standing mount 语义）。所以改完模板或插件代码，得把 DSH 进程重启一次。
-
-它和标准模式的差别全在那份组合文件里：
-
-| | 标准模式 | 导师模式 |
-|---|---|---|
-| 看代码 | `read` / `grep` / `glob` / shell 都能看 | **只有** `tutor_evidence_read`，走证据预算 |
-| 改代码 | 能改 | 没有任何写工具 |
-| 提问 | `ask_user_question` | 同左，每个单元默认一次检查 |
-| 教学 prompt | 一小节，条件触发 | 常驻，`alwaysOn: true` |
-| 全局工具 | 全部可见 | 读文件/执行命令/上网/派子代理类的全局工具会被摘掉（`blockBypassTools`） |
-
-`blockBypassTools` 的实现在 `agent/created` 上，原因有两个：DSH 的 `tools.restrict()`
-只接受 agent 作用域（源码里明确拒绝 context-global 调用），而且它把未知名字和
-scope-local 名字当成错误。所以只 deny「这个 agent 确实看得见」的那批会绕过证据预算的工具。
-
-它**清不掉无关的全局插件**——比如你自己装的 `dsh-cad` 会照样出现在工具表里。
-那种要挡得从 profile 里卸载，而且也没必要：CAD 工具读不了源码。
-
-工作原理不是改 DSH：preset 就是一个 `agent.cordis.yml`，里面只装 `persona` +
-`repo-tutor` 插件行 + `tool-ask-user` + compaction 一组。没有 fs / shell / web /
-子代理 / skill / goal / plan-mode 行，模型就**没有别的门路**绕过证据预算。
-
-## 先试试
-
-一条命令起一个带插件的 DSH Web，你要读的仓库同时是 workspace 和 tutor 的仓库根：
-
-```sh
-$env:DSH_HARNESS = "D:\DSH\deepseek-harness"
-node scripts/try.mjs                    # 读本仓库
-node scripts/try.mjs D:\path\to\repo    # 读别的仓库
-```
-
-它会打印带 token 的地址并在浏览器里打开。进去说一句「带我读懂这个仓库」就行。
-
-为什么不用 `pnpm dsh web`：`pnpm dsh` 必须在 DSH checkout 里跑，cwd 就是 harness，
-tutor 的仓库根对不上。`try.mjs` 用绝对路径调 CLI、把 cwd 留给目标仓库，
-再顺手把 tsx 的 tsconfig 钉回 checkout（不钉会解析错 `@deepseek-ai/cordis`）。
-
-## 本地跑（手动）
-
-```sh
-# 先构建 core，再让 DSH 加载插件
-$env:REPO_TUTOR_CORE = "<repo>/build/dev-mingw/apps/repo-tutor-core/repo-tutor-core.exe"
-pnpm dsh web --patch hosts/dsh/overlay.local.yml
-```
-
-单独验证协议通道（不需要 DSH）：
-
-```sh
-node hosts/dsh/test/client-smoke.mjs "<repo>/build/dev-mingw/apps/repo-tutor-core/repo-tutor-core.exe"
-```
-
-## 环境变量
-
-| 变量 | 作用 |
+| 需要 | 说明 |
 |---|---|
-| `REPO_TUTOR_CORE` | 必填。`repo-tutor-core` 可执行文件路径。 |
-| `REPO_TUTOR_ROOT` | 覆盖仓库根。不设就跟着**会话自己的工作目录**走（DSH Web 里换 workspace，tutor 就跟着换）。脚本和测试用它钉住目标仓库。 |
-| `REPO_TUTOR_TRACE` | 非空且非 `0` 时，Core 把每条请求和响应摘一行到 stderr。调试和验证用。 |
+| DSH | `engines.dsh` 声明的窗口内，当前验证于 `0.1.6-alpha.1` |
+| Node | `^22.19.0 \|\| >=24.0.0`（跟 DSH 一致） |
+| `repo-tutor-core` 可执行文件 | 本阶段**不随包分发**，得自己拿 |
+
+`repo-tutor-core` 的解析顺序：
+
+1. 插件行配置里的 `corePath`
+2. `REPO_TUTOR_CORE` 环境变量
+3. 源码 checkout 的构建产物（只在从仓库里直接跑时存在）
+
+从 npm 装进来时 1 或 2 必须给一个，否则挂载时报 `repo-tutor-core not found`，
+错误信息里会列出它找过的每一个路径。
+
+## 装
+
+```sh
+# 作为 profile 的一层（推荐）
+dsh plugin --profile web add repo-tutor-dsh
+
+# 或者手动装进 profile
+cd "$DSH_HOME/profiles/web" && pnpm add repo-tutor-dsh
+```
+
+包声明了 `dsh.bundle.patch`，所以 `dsh plugin add` 之后它会被自动加进
+`dsh.profile.bundles`，插件行随 profile 启动生效。启动前记得给 Core 路径：
+
+```sh
+REPO_TUTOR_CORE=/path/to/repo-tutor-core
+```
+
+## 导师模式（第五个模式）
+
+DSH 自带四个模式（标准 / PTC / 极简 / 创造），都从"编码 Agent"出发。导师模式是第五个，
+也是最窄的一个：**只教，不替你改**。选它，整段会话就是教学会话。
+
+```sh
+repo-tutor-install-preset                        # Core 走 REPO_TUTOR_CORE
+repo-tutor-install-preset --core /path/to/core   # 把路径写进 preset
+```
+
+装进 `$DSH_HOME/.agent-presets/repo-tutor/`，重启 DSH 后在模式选择器里选「导师模式」。
+
+安装器会把插件本体复制进 preset 目录（`plugin/src`、`plugin/policies`），行写成
+`./plugin/src/index.js`。**故意不用包名**：DSH 解析 preset 行里的包名时，基准是
+已安装的 harness，不是用户的 profile，装进 profile 的包它看不见；`./` 开头的名字
+按 preset 自己的目录解析（Include 会改写 baseUrl），从 checkout 跑和从 npm 包跑都一样。
+
+**改名不用重启，改行为要重启。** roster 每次调用都重读目录，所以显示名、说明立刻生效；
+但 preset 一旦被某个会话挂载过，这份组合就钉在那个进程里直到进程退出
+（DSH 的 standing mount 语义）。改完 preset 或插件代码要重启一次 DSH 进程。
 
 ## 工具
 
@@ -108,45 +82,50 @@ node hosts/dsh/test/client-smoke.mjs "<repo>/build/dev-mingw/apps/repo-tutor-cor
 6000 字节封顶），不是只记一笔账。证据台账冻结在 `question.create` 那一刻，
 `answer.submit` 返回的评估上下文只包含那份快照。
 
-`/tutor` 命令显示当前会话状态（web profile；headless 没有 commands，自动跳过）。
+导师模式另外有三条收紧：`alwaysOn`（prompt 变成"这个会话就是教学"）、
+`blockBypassTools`（把宿主全局注册的读文件/执行命令/上网/派子代理类工具从这个 agent 上摘掉）、
+没有 fs / shell / web / 子代理行的组合。它们清不掉无关的全局插件（比如 CAD）——
+DSH 的 `tools.restrict()` 只认具体工具名。
 
 ## 教学 prompt
 
-插件往 system prompt 里加一节 `repo-tutor`（order 2450），正文在
-`policies/tutor-prompt.md`：什么该用 tutor 循环、循环长什么样、Core 会拦哪五条。
+正文在 `policies/tutor-prompt.md`，**每次组装现读**，所以改措辞不用重启 DSH。
+行配置的 `promptPath` 可以指到别处。文件读不到时退到一份最小规则并打日志。
 
-**改这段不用重启 DSH**：section 的 text 是个函数，每次组装现读那个文件。
-所以调教学措辞的循环是「改文件 → 下一句话就生效」，不是「改代码 → 重启 → 新会话」。
-文件读不到时退到一份最小规则并打日志，不会让导师变成没有规则的机器人。
+## 环境变量
 
-开头那句（"什么时候算教学"）仍然在 `src/index.js` 里，因为它随模式变化：
-普通模式是"用户想学时你可以教"，导师模式（`alwaysOn`）是"这个会话就是教学"。
-`systemPrompt` 服务不存在时（被裁剪过的 profile）自动跳过，不写进 `inject`。
+| 变量 | 作用 |
+|---|---|
+| `REPO_TUTOR_CORE` | Core 可执行文件路径（从 npm 装时的必须项之一） |
+| `REPO_TUTOR_ROOT` | 覆盖仓库根。不设就跟着会话自己的工作目录走 |
+| `REPO_TUTOR_TRACE` | 非空且非 `0` 时，Core 把每条请求/响应摘一行到 stderr |
+
+## 包里有什么
+
+```
+src/index.js                插件本体（工具 / prompt 小节 / /tutor 命令）
+src/core-client.mjs         spawn core + 逐行 JSON-RPC
+policies/tutor-prompt.md    教学 prompt 正文
+preset/                     导师模式的组合模板
+scripts/install-preset.mjs  导师模式安装器（bin: repo-tutor-install-preset）
+scripts/verify-package.mjs  发布前自检（npm pack + 解包 + 接线断言）
+cordis.patch.yml            bundle 层：插一行插件
+```
 
 ## 验证
 
-**单点：** 模型能调到 Core。
+包内自检（不依赖 DSH 环境，会真的 `npm pack` 再解包检查）：
 
 ```sh
-$env:DSH_HARNESS = "D:\DSH\deepseek-harness"
-node scripts/model-smoke.mjs
+npm run verify
 ```
 
-**全流程：** 模型自己把完整教学闭环跑完。
-
-```sh
-$env:DSH_HARNESS = "D:\DSH\deepseek-harness"
-node scripts/tutor-loop-smoke.mjs
-```
-
-它建一个临时小仓库，让模型走 scan → propose map → open unit → evidence →
-question → answer → evaluation → complete → 下一个单元。判定不靠模型自己的汇报：
-脚本读 `REPO_TUTOR_TRACE=1` 打出的协议轨迹，按顺序和内容核对 Core 实际收到了什么。
-完整日志写在 `build/tutor-loop-smoke.log`。
+完整验证（协议走查、插件接线、模型闭环）在仓库里跑：
+<https://github.com/Wang-yifan666/Repo_Tutor#readme>
 
 ## 还没做：Conversation Node
 
-完整的 DSH Web UI（`ConversationNodeDefinition`）没有做，有两个实际障碍：
+完整的 DSH Web UI（`ConversationNodeDefinition`）没做，有两个实际障碍：
 
 1. **session event 的 ignorable 机制**：out-of-tree 插件的事件类型不在
    `KNOWN_SESSION_EVENT_TYPES` 里，而 `Session.append()` 不会设置 `ignorable`
@@ -154,18 +133,14 @@ question → answer → evaluation → complete → 下一个单元。判定不�
 2. **client bundle 构建**：`dsh.client` 声明需要构建出 `./client` bundle，
    依赖 DSH 内部的 tsdown preset；out-of-tree 插件没有现成的构建路径。
 
-在解决这两点之前，工具输出和 `/tutor` 命令就是当前的 UI surface。
+在那之前，工具输出和 `/tutor` 命令就是 UI surface。
 
-## 生命周期
+## 生命周期与已知风险
 
-- Core 按**仓库根**一份：同一个仓库的两个对话共享同一份学习状态（地图、进度一起走），
-  不同仓库各用各的 Core，互不干扰。插件卸载时全部关掉。
-- 仓库根的来源是这条调用所属会话的工作目录（`agent.session.header.cwd`），
-  不是宿主进程的 cwd。DSH Web 里一个会话可以有自己的 workspace，两者本来就不一样。
-- Core 在 stdin EOF 时自行退出，所以强杀宿主时不会留下孤儿进程。
+- Core 按**仓库根**一份：同一仓库的两个对话共享学习状态，不同仓库各用各的。
+  插件卸载时全部关掉。
+- 仓库根来自这条调用所属会话的工作目录（`agent.session.header.cwd`），不是宿主进程 cwd。
+- Core 在 stdin EOF 时自行退出，所以强杀宿主不会留下孤儿进程（实测有效，
+  但没有兜底以外的保证）。
 
-## 已知风险
-
-- 强杀 DSH 进程时插件 disposer 不执行；目前靠 Core 在 stdin EOF 时自行退出兜底
-  （实测有效，但没有兜底以外的保证）。
-- 同一仓库的两个对话共享学习状态，所以别在两边同时教不同的单元，会互相把当前单元切走。
+MIT License.

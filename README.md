@@ -69,6 +69,23 @@ node scripts/try.mjs D:\path\to\repo       # tutor another repo
 node scripts/install-preset.mjs
 ```
 
+## As an npm package
+
+`hosts/dsh/` is itself a DSH bundle package (`dsh.bundle.patch` points at
+`cordis.patch.yml`), so it distributes with plain `npm pack`:
+
+```sh
+cd hosts/dsh
+npm pack                                    # produce the tarball
+npm run verify                              # publish gate: whitelist, unpack, installer, live Core round-trip
+dsh plugin --profile <name> add ./repo-tutor-dsh-0.1.0.tgz
+```
+
+Point `REPO_TUTOR_CORE` at the executable afterwards — `repo-tutor-core` is not
+shipped with the package yet. The Tutor mode installs through the package's
+`repo-tutor-install-preset` bin, which vendors the plugin into the preset directory
+so it never needs a source checkout on the machine.
+
 ## Tests
 
 ```sh
@@ -100,7 +117,7 @@ node scripts/smoke.mjs --model             # plus model-driven checks (needs DSH
 core/                  C++ domain layer (invariants, evidence budget, question contract)
 apps/repo-tutor-core/  process boundary: the JSON-RPC server
 hosts/dsh/             DSH adapter + the Tutor mode preset template
-policies/              teaching policy in full (what the model reads)
+policies/              teaching policy in full (the injected text lives in hosts/dsh/policies/)
 tests/                 CTest: units, protocol black box, vertical slice
 scripts/               build, try, install, verify
 ```

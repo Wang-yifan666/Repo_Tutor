@@ -69,6 +69,22 @@ node scripts/try.mjs D:\path\to\repo       # 读别的仓库
 node scripts/install-preset.mjs
 ```
 
+## 当 npm 包装
+
+`hosts/dsh/` 本身就是一个符合 DSH Bundle 规范的 npm 包（`dsh.bundle.patch` 指到
+`cordis.patch.yml`），可以直接 `npm pack` 分发：
+
+```sh
+cd hosts/dsh
+npm pack                                    # 出 tarball
+npm run verify                              # 发布自检：白名单 / 解包 / 安装器 / 真实 Core 往返
+dsh plugin --profile <name> add ./repo-tutor-dsh-0.1.0.tgz
+```
+
+装完记得给 `REPO_TUTOR_CORE`——这一阶段 `repo-tutor-core` 不随包分发。
+导师模式用 `repo-tutor-install-preset`（包里的 bin），它会把插件复制进 preset 目录，
+不依赖你本地有源码仓库。
+
 ## 测试
 
 ```sh
@@ -100,7 +116,7 @@ node scripts/smoke.mjs --model             # 再加上模型驱动验证（要 D
 core/                C++ 领域层（不变量、证据预算、Question 契约）
 apps/repo-tutor-core/ 进程边界：JSON-RPC 服务端
 hosts/dsh/          DSH adapter + 导师模式的 preset 模板
-policies/           教学行为指引（给模型看的完整版）
+policies/           教学行为指引（注入给模型的那份在 hosts/dsh/policies/）
 tests/              CTest：单元、协议黑盒、垂直切片
 scripts/            构建、试玩、安装、验证脚本
 ```

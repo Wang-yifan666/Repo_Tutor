@@ -13,17 +13,19 @@ import { CoreClient } from './core-client.mjs'
 export const name = 'repo-tutor-dsh'
 export const inject = ['tools']
 
-// 从插件自己的位置倒推 Core 可执行文件：<repo>/hosts/dsh/src/index.js
-// → <repo>/build/<preset>/apps/repo-tutor-core/…。这样装进 agent preset 时
-// 不需要任何环境变量，行配置里也可以显式覆盖。
-const pluginDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(pluginDir, '..', '..', '..')
+// 插件所在的包根目录。开发时是 <repo>/hosts/dsh，从 npm 装进来时是
+// node_modules/repo-tutor-dsh —— 两者结构一样，所以下面的相对路径都成立。
+// 教学 prompt 和 Core 可执行文件的查找都从这儿出发，不再假设"用户有完整源码仓库"。
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const isWindows = process.platform === 'win32'
 
-function builtCorePath() {
+// 开发态的便利路径：只有从 checkout 里跑时才存在，装成 npm 包后一般找不到。
+function checkoutCorePath() {
   const preset = isWindows ? 'dev-mingw' : 'dev'
-  return join(
-    repoRoot,
+  return resolve(
+    packageRoot,
+    '..',
+    '..',
     'build',
     preset,
     'apps',
@@ -32,22 +34,29 @@ function builtCorePath() {
   )
 }
 
+// Core 可执行文件的解析顺序，第一阶段没有二进制分发，所以必须能靠环境变量指定：
+//   1. 行配置 corePath（preset / patch 里显式写死）
+//   2. REPO_TUTOR_CORE 环境变量
+//   3. 源码 checkout 的构建产物（开发态）
+const CORE_HINT =
+  'Get the repo-tutor-core executable (build the C++ Core, or download a release once binary distribution lands) ' +
+  'and point REPO_TUTOR_CORE at it, or set corePath in the plugin row.'
+
 function resolveCorePath(config) {
   const configured = typeof config?.corePath === 'string' ? config.corePath : undefined
-  for (const candidate of [configured, process.env.REPO_TUTOR_CORE, builtCorePath()]) {
+  for (const candidate of [configured, process.env.REPO_TUTOR_CORE, checkoutCorePath()]) {
     if (candidate !== undefined && candidate !== '' && existsSync(candidate)) {
       return candidate
     }
   }
   throw new Error(
-    `repo-tutor-dsh: repo-tutor-core not found. Build it (cmake --preset dev-mingw && cmake --build --preset dev-mingw), ` +
-      `set REPO_TUTOR_CORE, or set corePath in the plugin row. Looked at: ${[
-        configured,
-        process.env.REPO_TUTOR_CORE,
-        builtCorePath(),
-      ]
-        .filter((value) => value !== undefined && value !== '')
-        .join(', ')}`,
+    `repo-tutor-dsh: repo-tutor-core not found. ${CORE_HINT} Looked at: ${[
+      configured,
+      process.env.REPO_TUTOR_CORE,
+      checkoutCorePath(),
+    ]
+      .filter((value) => value !== undefined && value !== '')
+      .join(', ')}`,
   )
 }
 
@@ -120,24 +129,27 @@ const QUESTION_TYPES = [
 //
 // 开头那段是唯一随模式变化的部分：装进普通模式时是"用户想学时你可以教"，
 // 装进专用的导师模式（preset 里 alwaysOn）时是"这个会话就是教学会话"。
-// 正文放在 policies/tutor-prompt.md，每次组装现读——改措辞不用重启 DSH。
 const GUIDANCE_TRIGGER =
   'You are also a repository tutor. When the user wants to understand an unfamiliar codebase — get oriented, learn how a mechanism works, be able to debug or change it — run the tutor loop through the tutor_* tools. A written summary does not build a mental model; guided reading does.'
 
 const GUIDANCE_ALWAYS =
   'You are a repository tutor, and this whole session is a tutoring session. The user is the learner and the workspace is the repository under study. A request to change or fix code is still a teaching request: your job is to make the learner able to do it themselves, not to do it for them. Run everything through the tutor_* tools — a written summary does not build a mental model, guided reading does.'
 
-const GUIDANCE_FILE = join(repoRoot, 'policies', 'tutor-prompt.md')
+// 正文放在包内的 policies/tutor-prompt.md：跟着 npm 包一起发，
+// 每次组装现读——改措辞不用重启 DSH。行配置 promptPath 可以指到别处。
+const GUIDANCE_FILE = join(packageRoot, 'policies', 'tutor-prompt.md')
 
 // 文件读不到就退到最小规则，别让导师变成没有规则的机器人。
 const GUIDANCE_FALLBACK =
   '\nThe loop: tutor_status → tutor_scan_repository → tutor_propose_learning_map → per unit (tutor_open_unit → tutor_evidence_read → teach → check → tutor_complete_unit). Read repository content only through tutor_evidence_read.'
 
-function guidanceBody() {
+function guidanceBody(config) {
+  const override = typeof config?.promptPath === 'string' ? config.promptPath : undefined
+  const file = override !== undefined && override !== '' ? override : GUIDANCE_FILE
   try {
-    return `\n${readFileSync(GUIDANCE_FILE, 'utf8').trim()}\n`
+    return `\n${readFileSync(file, 'utf8').trim()}\n`
   } catch (error) {
-    console.log(`[repo-tutor] 读不到 ${GUIDANCE_FILE}（${error.message}），用最简教学规则`)
+    console.log(`[repo-tutor] 读不到 ${file}（${error.message}），用最简教学规则`)
     return GUIDANCE_FALLBACK
   }
 }
@@ -568,7 +580,7 @@ export function apply(ctx, config) {
       order: 2450,
       interpolate: false,
       // 每次组装现读文件：改 policies/tutor-prompt.md 不用重启 DSH。
-      text: () => `## Repo Tutor\n\n${openingLine}${guidanceBody()}`,
+      text: () => `## Repo Tutor\n\n${openingLine}${guidanceBody(config)}`,
     })
   })
 

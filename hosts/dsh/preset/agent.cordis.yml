@@ -32,7 +32,13 @@
 
 # C++ Core 的 DSH adapter：11 个 tutor_* 工具 + 教学 prompt 小节 + /tutor 命令。
 # 只注册工具和 prompt，不发布 service，所以不需要 isolate realm。
-# 插件自己从自己的位置倒推 build 目录里的 repo-tutor-core；显式覆盖时加 corePath。
+#
+# 这一行由`repo-tutor-install-preset`写出来，两个占位符都在安装时替换：
+#   __REPO_TUTOR_PLUGIN__  → ./plugin/src/index.js（相对 preset 目录，插件被复制进来）
+#   __REPO_TUTOR_CORE_LINE__ → corePath: '...' 或者空行（让插件去读 REPO_TUTOR_CORE）
+# 用相对路径是有原因的：DSH 把包名解析到「已安装的 harness」下面，
+# 用户 profile 里装的包它找不到；相对 preset 目录则永远成立。
+#
 # alwaysOn: true 让 prompt 从"用户想学的时候你可以教"变成"这个会话就是教学会话"。
 # blockBypassTools: true 把宿主全局注册的「读文件 / 执行命令 / 上网 / 派子代理」从导师
 # agent 上摘掉，证据预算在任何组合下都堵得住。它清不掉无关的全局插件（CAD 之类），
@@ -42,6 +48,7 @@
   config:
     alwaysOn: true
     blockBypassTools: true
+__REPO_TUTOR_CORE_LINE__
 
 # 提问卡：确认学习地图、确认起点、出理解检查都靠它。
 # 没有这个，题目只能埋在正文末尾，学习者拿不到输入框。
