@@ -102,6 +102,9 @@ export function apply(ctx) {
         agentOptions: { provider: 'deepseek-official', model: 'deepseek-flash' },
       })
       const agent = handle.agent
+      // agents.create 不会自己组合 preset；UI 由 agent factory 代劳，程序化路径要显式 mount。
+      await ctx.agentPresets.mount(agent.ctx, 'repo-tutor')
+      result.composedPreset = ctx.agentPresets.composedPreset(agent.ctx) ?? null
       result.agentTools = {
         tutorStatus: agent.ctx.tools.get('tutor_status') !== undefined,
         read: agent.ctx.tools.get('read') !== undefined,

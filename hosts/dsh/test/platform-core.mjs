@@ -153,7 +153,13 @@ child.on('exit', () => { console.log(out.trim()); });`],
   const probeD = join(appD, 'probe.mjs')
   writeFileSync(
     probeD,
-    `const plugin = await import('repo-tutor-dsh')
+    `// 惰性解析：apply 不再抛错（那会让整行静默 never started），错误必须在"用"的时候明确出现。
+const { findPlatformCore, missingPlatformCoreMessage } = await import('repo-tutor-dsh/src/platform-core.mjs')
+const { readFileSync } = await import('node:fs')
+const manifest = JSON.parse(readFileSync(new URL('./node_modules/repo-tutor-dsh/package.json', import.meta.url)))
+const found = findPlatformCore(manifest, { requireFrom: new URL('./node_modules/repo-tutor-dsh/src/index.js', import.meta.url) })
+const message = missingPlatformCoreMessage(manifest, found)
+const plugin = await import('repo-tutor-dsh')
 const tools = new Map()
 const ctx = {
   tools: { register: (d) => tools.set(d.name, d) },
@@ -162,18 +168,19 @@ const ctx = {
   on: () => () => {},
   inject: () => () => {},
 }
-try {
-  plugin.apply(ctx, {})
-  console.log('NO_ERROR')
-} catch (error) {
-  console.log('ERROR:' + error.message)
-}
+plugin.apply(ctx, {})
+if (tools.size !== 11) console.log('NO_TOOLS')
+else console.log(JSON.stringify({ missing: found.missing ?? 'none', message }))
 `,
   )
   const dOut = run(process.execPath, [probeD], { cwd: appD, env: { ...process.env, REPO_TUTOR_CORE: '' } })
   check(
-    dOut.out.includes('core-') && dOut.out.includes('--omit=optional'),
-    'D: the error names the platform package and --omit=optional',
+    dOut.out.includes('"missing"') &&
+      dOut.out.includes('core-') &&
+      dOut.out.includes('--omit=optional') &&
+      dOut.out.includes('REPO_TUTOR_CORE') &&
+      dOut.out.includes('corePath'),
+    'D: the lazy error names the platform package, --omit=optional and the manual escape hatches',
     dOut.out.slice(-500),
   )
 
