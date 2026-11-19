@@ -40,7 +40,7 @@ for (const required of [cliEntry, tsxEntry, tsconfig, credentials]) {
 
 const suffix = `${process.platform}-${process.arch}`
 const exeName = isWindows ? 'repo-tutor-core.exe' : 'repo-tutor-core'
-const corePath = process.env.REPO_TUTOR_CORE ?? join(repoRoot, 'build', isWindows ? 'dev-mingw' : 'dev', 'apps', 'repo-tutor-core', exeName)
+const corePath = process.env.REPO_TUTOR_CORE || join(repoRoot, 'build', isWindows ? 'dev-mingw' : 'dev', 'apps', 'repo-tutor-core', exeName)
 if (!existsSync(corePath)) {
   console.log(`SKIPPED: repo-tutor-core not built at ${corePath}`)
   process.exit(0)
