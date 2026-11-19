@@ -13,7 +13,23 @@ Question 契约全在 `core/` 里。
 - `cordis.patch.yml`：装进 profile 用的 bundle 层。
 - `overlay.local.yml`：本地开发用 `--patch` overlay（绝对路径，已 gitignore）。
 
-## 本地跑
+## 先试试
+
+一条命令起一个带插件的 DSH Web，你要读的仓库同时是 workspace 和 tutor 的仓库根：
+
+```sh
+$env:DSH_HARNESS = "D:\DSH\deepseek-harness"
+node scripts/try.mjs                    # 读本仓库
+node scripts/try.mjs D:\path\to\repo    # 读别的仓库
+```
+
+它会打印带 token 的地址并在浏览器里打开。进去说一句「带我读懂这个仓库」就行。
+
+为什么不用 `pnpm dsh web`：`pnpm dsh` 必须在 DSH checkout 里跑，cwd 就是 harness，
+tutor 的仓库根对不上。`try.mjs` 用绝对路径调 CLI、把 cwd 留给目标仓库，
+再顺手把 tsx 的 tsconfig 钉回 checkout（不钉会解析错 `@deepseek-ai/cordis`）。
+
+## 本地跑（手动）
 
 ```sh
 # 先构建 core，再让 DSH 加载插件
