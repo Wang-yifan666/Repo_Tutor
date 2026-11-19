@@ -1,4 +1,4 @@
-# The `repo-tutor` agent preset: 仓库导师模式 —— 只会教，不会替你改。
+# The `repo-tutor` agent preset: 导师模式 —— 只会教，不会替你改。
 #
 # 这是模板，装到本机用：node scripts/install-preset.mjs
 # 安装脚本会把 __REPO_TUTOR_PLUGIN__ 换成本机插件的绝对路径。

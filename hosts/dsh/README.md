@@ -13,9 +13,9 @@ Question 契约全在 `core/` 里。
 - `cordis.patch.yml`：装进 profile 用的 bundle 层。
 - `overlay.local.yml`：本地开发用 `--patch` overlay（绝对路径，已 gitignore）。
 
-## 第五个模式：仓库导师模式
+## 第五个模式：导师模式
 
-DSH 自带四个模式（标准 / PTC / 极简 / 创造），都从"编码 Agent"出发。仓库导师模式是
+DSH 自带四个模式（标准 / PTC / 极简 / 创造），都从"编码 Agent"出发。导师模式是
 第五个，也是最窄的一个：**它只会教，不会替你改**。选了这个模式，整段会话就是教学会话，
 不需要模型自己判断"这一句是不是学习请求"——触发边界因此消失。
 
@@ -26,11 +26,11 @@ node scripts/install-preset.mjs      # 装到 $DSH_HOME/.agent-presets/repo-tuto
 ```
 
 装完不用重启：DSH 的 roster 每次调用都重读目录，新开会话时模式选择器里就有
-「仓库导师模式」。模板在 `hosts/dsh/preset/`，改完重跑脚本即可。
+「导师模式」。模板在 `hosts/dsh/preset/`，改完重跑脚本即可。
 
 它和标准模式的差别全在那份组合文件里：
 
-| | 标准模式 | 仓库导师模式 |
+| | 标准模式 | 导师模式 |
 |---|---|---|
 | 看代码 | `read` / `grep` / `glob` / shell 都能看 | **只有** `tutor_evidence_read`，走证据预算 |
 | 改代码 | 能改 | 没有任何写工具 |
