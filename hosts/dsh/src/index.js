@@ -5,21 +5,32 @@
 // 唯一算"内容"的东西是工具描述和阻断提示的措辞——那是给模型看的说明书。
 
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { CoreClient } from './core-client.mjs'
+import {
+  expectedProtocolVersion,
+  findPlatformCore,
+  missingPlatformCoreMessage,
+} from './platform-core.mjs'
 
 export const name = 'repo-tutor-dsh'
 export const inject = ['tools']
 
 // 插件所在的包根目录。开发时是 <repo>/hosts/dsh，从 npm 装进来时是
-// node_modules/repo-tutor-dsh —— 两者结构一样，所以下面的相对路径都成立。
-// 教学 prompt 和 Core 可执行文件的查找都从这儿出发，不再假设"用户有完整源码仓库"。
+// node_modules/repo-tutor-dsh；复制进 preset 时是 <preset>/plugin。
+// 教学 prompt 的查找、相对 corePath 的解析都从这儿出发。
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const isWindows = process.platform === 'win32'
+const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
 
-// 开发态的便利路径：只有从 checkout 里跑时才存在，装成 npm 包后一般找不到。
+// 协议版本握手：Core 的 protocol.negotiate 必须报这个版本。
+// 混装主包 / 平台包 / 旧 Core 时，这条会先炸，而不是让工具莫名其妙地失败。
+const PROTOCOL_VERSION = expectedProtocolVersion(manifest)
+
+// 开发态的便利路径：只有从 checkout 里跑时才存在。它是最后一道兜底，
+// 不是依赖——平台包解析排在它前面。
 function checkoutCorePath() {
   const preset = isWindows ? 'dev-mingw' : 'dev'
   return resolve(
@@ -34,30 +45,51 @@ function checkoutCorePath() {
   )
 }
 
-// Core 可执行文件的解析顺序，第一阶段没有二进制分发，所以必须能靠环境变量指定：
-//   1. 行配置 corePath（preset / patch 里显式写死）
-//   2. REPO_TUTOR_CORE 环境变量
-//   3. 源码 checkout 的构建产物（开发态）
-const CORE_HINT =
-  'Get the repo-tutor-core executable (build the C++ Core, or download a release once binary distribution lands) ' +
-  'and point REPO_TUTOR_CORE at it, or set corePath in the plugin row.'
+/**
+ * Core 可执行文件的解析顺序：
+ *   1. 行配置 corePath（preset 里写相对路径时按插件目录解析）
+ *   2. REPO_TUTOR_CORE 环境变量
+ *   3. 自身 npm 依赖里的平台包（Bundle 模式）
+ *   4. 源码 checkout 的构建产物（只对开发有用）
+ */
+function resolveCore(config) {
+  const configured = typeof config?.corePath === 'string' && config.corePath !== '' ? config.corePath : undefined
+  if (configured !== undefined) {
+    // preset 里写 '../bin/repo-tutor-core.exe'：相对路径按插件自身目录解析，
+    // 这样复制出来的 preset 搬到别处还能用，不会把 npx 缓存路径写死。
+    const resolved = isAbsolute(configured) ? configured : resolve(packageRoot, configured)
+    if (!existsSync(resolved)) {
+      throw new Error(
+        `repo-tutor-dsh: corePath points at a missing file: ${configured} (resolved ${resolved}). ` +
+          'Re-run the preset installer, or fix corePath.',
+      )
+    }
+    return { path: resolved, source: 'corePath' }
+  }
 
-function resolveCorePath(config) {
-  const configured = typeof config?.corePath === 'string' ? config.corePath : undefined
-  for (const candidate of [configured, process.env.REPO_TUTOR_CORE, checkoutCorePath()]) {
-    if (candidate !== undefined && candidate !== '' && existsSync(candidate)) {
-      return candidate
+  const fromEnv = process.env.REPO_TUTOR_CORE
+  if (fromEnv !== undefined && fromEnv !== '') {
+    if (!existsSync(fromEnv)) {
+      throw new Error(`repo-tutor-dsh: REPO_TUTOR_CORE points at a missing file: ${fromEnv}`)
+    }
+    return { path: fromEnv, source: 'REPO_TUTOR_CORE' }
+  }
+
+  const platform = findPlatformCore(manifest, { requireFrom: import.meta.url })
+  if (platform.path !== undefined) {
+    return {
+      path: platform.path,
+      source: `platform package ${platform.packageName}`,
+      protocolVersion: platform.protocolVersion,
     }
   }
-  throw new Error(
-    `repo-tutor-dsh: repo-tutor-core not found. ${CORE_HINT} Looked at: ${[
-      configured,
-      process.env.REPO_TUTOR_CORE,
-      checkoutCorePath(),
-    ]
-      .filter((value) => value !== undefined && value !== '')
-      .join(', ')}`,
-  )
+
+  const checkout = checkoutCorePath()
+  if (existsSync(checkout)) {
+    return { path: checkout, source: 'checkout build' }
+  }
+
+  throw new Error(missingPlatformCoreMessage(manifest, platform))
 }
 
 // Core 返回的 blocked 是正常业务结果，不是工具失败。
@@ -249,7 +281,8 @@ function installEvidenceFirewall(ctx) {
 }
 
 export function apply(ctx, config) {
-  const exePath = resolveCorePath(config)
+  const core = resolveCore(config)
+  const exePath = core.path
   // 专用导师模式（preset 里 alwaysOn: true）：整段会话都是教学，没有"是否触发"这一说。
   const alwaysOn = config?.alwaysOn === true
   const openingLine = alwaysOn ? GUIDANCE_ALWAYS : GUIDANCE_TRIGGER
@@ -292,7 +325,24 @@ export function apply(ctx, config) {
         onStderr: (line) => console.log(`[repo-tutor] ${line}`),
       })
       const ready = (async () => {
-        await client.request('protocol.negotiate')
+        // 握手先于一切：Core 的协议版本对不上就直接拒绝，别让工具半死不活。
+        const negotiated = await client.request('protocol.negotiate')
+        const actual = negotiated?.protocolVersion
+        if (actual !== PROTOCOL_VERSION) {
+          client.close()
+          throw new Error(
+            `repo-tutor-dsh: protocol mismatch — this plugin speaks ${PROTOCOL_VERSION}, ` +
+              `but the Core at ${exePath} (${core.source}) negotiated ${String(actual)}. ` +
+              'Mixing a plugin and a Core from different versions is not supported; reinstall so they match.',
+          )
+        }
+        if (core.protocolVersion !== undefined && core.protocolVersion !== PROTOCOL_VERSION) {
+          client.close()
+          throw new Error(
+            `repo-tutor-dsh: platform package ${core.source} declares protocol ${core.protocolVersion}, ` +
+              `this plugin speaks ${PROTOCOL_VERSION}. Versions drifted between packages.`,
+          )
+        }
         await client.request('session.start', { coverage: 'core_path', root })
       })()
       entry = { client, ready }

@@ -1,0 +1,125 @@
+# 平台 Core 的构建与发版流程。
+#
+# 每个原生 runner 只产出自己那一份平台包：构建 → 跑 C++ 测试 → 查动态库依赖 →
+# 算 SHA-256 → 生成平台包 → 上传产物。主包由 release job 统一 pack，
+# 版本一致性由 hosts/dsh/scripts/make-platform-packages.mjs 断言。
+#
+# 本文件没有在 GitHub 上真实跑过（这次约束是不推送）；本地等价流程见
+# hosts/dsh/test/linux-native.sh（Linux / WSL）和 hosts/dsh/test/platform-core.mjs（Windows）。
+
+name: core-platforms
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: core-${{ matrix.platform }}-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: win32
+            arch: x64
+            exe: build/release/apps/repo-tutor-core/Release/repo-tutor-core.exe
+          # ubuntu-22.04 是 glibc 2.35；用更老的 runner 才能覆盖更宽的发行版。
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
+            exe: build/release/apps/repo-tutor-core/repo-tutor-core
+          - os: macos-14
+            platform: darwin
+            arch: arm64
+            exe: build/release/apps/repo-tutor-core/repo-tutor-core
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+
+      - name: Configure
+        run: cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DREPO_TUTOR_STATIC_RUNTIME=ON
+
+      - name: Build
+        run: cmake --build build/release --config Release --parallel 4
+
+      - name: C++ tests (unit + protocol black box + vertical slice)
+        run: ctest --test-dir build/release -C Release --output-on-failure
+
+      # 原生平台各自的运行时依赖：Windows 用 dumpbin/objdump，Linux 用 ldd，macOS 用 otool。
+      - name: Dynamic dependency check
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            ldd "${{ matrix.exe }}"
+          elif [ "${{ matrix.platform }}" = "darwin" ]; then
+            otool -L "${{ matrix.exe }}"
+          fi
+
+      - name: Generate platform package (checks deps, sha256, protocol, exec bit)
+        run: node hosts/dsh/scripts/make-platform-packages.mjs --platform ${{ matrix.platform }}-${{ matrix.arch }} --core ${{ matrix.exe }}
+
+      - name: Verify the binary answers the protocol
+        shell: bash
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"protocol.negotiate","params":{}}' \
+            | "${{ matrix.exe }}" | tee /tmp/negotiate.txt
+          grep -q '"protocolVersion":"0.1"' /tmp/negotiate.txt
+
+      - name: Pack platform package
+        working-directory: hosts/dsh/dist/platforms/${{ matrix.platform }}-${{ matrix.arch }}
+        run: npm pack --pack-destination ../../../../dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-${{ matrix.platform }}-${{ matrix.arch }}
+          path: hosts/dsh/dist/*.tgz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Assert every platform package matches the main package version
+        run: |
+          node -e '
+            const { readFileSync, readdirSync } = require("node:fs")
+            const main = JSON.parse(readFileSync("hosts/dsh/package.json", "utf8"))
+            const files = readdirSync("dist", { recursive: true }).filter((f) => String(f).endsWith(".tgz"))
+            console.log("main:", main.name, main.version)
+            for (const [name, wanted] of Object.entries(main.optionalDependencies ?? {})) {
+              console.log("requires", name, "at", wanted)
+              if (wanted !== main.version) {
+                console.error("version drift:", name, wanted, "!==", main.version)
+                process.exit(1)
+              }
+            }
+            console.log("tarballs:", files.length)
+          '
+
+      - name: Pack the main package
+        working-directory: hosts/dsh
+        run: npm pack --dry-run
+
+      # 发布动作留给人来做：先确认 scope 可用性、LICENSE，再 npm publish。
+      - name: Publish hint
+        run: echo "npm publish is intentionally NOT automated; see the release checklist in hosts/dsh/README.md"

@@ -1,0 +1,26 @@
+{
+  "//": "发布配置：scope 改名只改这里（或用 REPO_TUTOR_NPM_SCOPE 覆盖）。版本永远跟主包走。",
+  "scope": "@repo-tutor",
+  "protocolVersion": "0.1",
+  "targets": [
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "bin": "repo-tutor-core.exe",
+      "buildAction": "windows"
+    },
+    {
+      "platform": "linux",
+      "arch": "x64",
+      "bin": "repo-tutor-core",
+      "buildAction": "linux-glibc"
+    },
+    {
+      "platform": "darwin",
+      "arch": "arm64",
+      "bin": "repo-tutor-core",
+      "buildAction": "macos-arm64",
+      "unverified": "只有在本机 macOS runner 上真跑过才能去掉这个标记"
+    }
+  ]
+}

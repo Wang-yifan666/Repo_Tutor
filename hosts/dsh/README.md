@@ -13,33 +13,41 @@ Repo Tutor 的 DSH 插件包：11 个 `tutor_*` 工具、一节教学 prompt、�
 |---|---|
 | DSH | `engines.dsh` 声明的窗口内，当前验证于 `0.1.6-alpha.1` |
 | Node | `^22.19.0 \|\| >=24.0.0`（跟 DSH 一致） |
-| `repo-tutor-core` 可执行文件 | 本阶段**不随包分发**，得自己拿 |
+| `repo-tutor-core` | 由平台包提供（Windows x64 / Linux x64 已验证，macOS arm64 待原生验证） |
 
 `repo-tutor-core` 的解析顺序：
 
-1. 插件行配置里的 `corePath`
+1. 插件行配置里的 `corePath`（preset 里写成相对路径，按插件自身目录解析）
 2. `REPO_TUTOR_CORE` 环境变量
-3. 源码 checkout 的构建产物（只在从仓库里直接跑时存在）
+3. **自身 `optionalDependencies` 里当前平台的包**（Bundle 模式）
+4. 源码 checkout 的构建产物（只对开发有用）
 
-从 npm 装进来时 1 或 2 必须给一个，否则挂载时报 `repo-tutor-core not found`，
-错误信息里会列出它找过的每一个路径。
+平台包是精确版本锁定的：`repo-tutor-dsh@0.1.0` 只认 `@…/core-<platform>-<arch>@0.1.0`。
+装不上（`--omit=optional`、平台不匹配、registry 缺包）时，挂载会报一条列出所有出路的错误。
 
 ## 装
 
+两条入口，随便挑一条（也可以都装）：
+
+**1) Bundle 模式** —— 让插件行随 profile 启动：
+
 ```sh
-# 作为 profile 的一层（推荐）
 dsh plugin --profile web add repo-tutor-dsh
-
-# 或者手动装进 profile
-cd "$DSH_HOME/profiles/web" && pnpm add repo-tutor-dsh
 ```
 
-包声明了 `dsh.bundle.patch`，所以 `dsh plugin add` 之后它会被自动加进
-`dsh.profile.bundles`，插件行随 profile 启动生效。启动前记得给 Core 路径：
+包声明了 `dsh.bundle.patch`，`dsh plugin add` 之后会自动进 `dsh.profile.bundles`，
+平台包作为 optionalDependency 一起装下来，**不需要设 `REPO_TUTOR_CORE`**。
+
+**2) 导师模式（Preset）** —— 装成一个只教不改的模式：
 
 ```sh
-REPO_TUTOR_CORE=/path/to/repo-tutor-core
+npx repo-tutor-dsh --core /path/to/repo-tutor-core   # 用户自己管 Core
+npx repo-tutor-dsh                                   # 或者：默认把平台包的 Core 复制进 preset
 ```
+
+不带 `--core` 时，安装器把平台包里的二进制**复制**到 `<preset>/bin/`，行里写相对路径
+`../bin/repo-tutor-core.exe`。这样做是因为 npx / npm 缓存随时会被清掉，把缓存里的绝对路径
+写进持久化配置迟早失效；复制之后 preset 目录能整体搬走、也不依赖 node_modules。
 
 ## 导师模式（第五个模式）
 
@@ -70,18 +78,33 @@ npx repo-tutor-dsh --version
 npx repo-tutor-dsh --help
 ```
 
-**重复安装 / 升级 / 卸载**：安装器会写一份 `installed.json`（版本、Core 路径、每个受管
+**重复安装 / 升级 / 卸载**：安装器会写一份 `installed.json`（版本、Core 来源、每个受管
 文件的 sha256）。再次安装时只覆盖「内容还是我们写的那份」的文件；内容变了就是本地改过的，
 覆盖前整体备份到 `backup-<时间戳>/` 并在输出里点名。升级会清掉上一版有、这一版没有的
-文件，不残留失效路径。卸载只删原样的受管文件，改过的会移到 `kept-<时间戳>/` 保留。
+文件（包括换了名字的旧二进制），不残留失效路径。卸载只删原样的受管文件，改过的会移到
+`kept-<时间戳>/` 保留。
+
+复制出来的 `plugin/` 会带一份最小 `package.json`（`type: module`）——没有它，preset 目录
+上面的 Node 解析可能把 `.js` 当 CommonJS，插件的 ESM 导入会直接失败。
 
 **跨平台**：bin 文件带 `#!/usr/bin/env node`；npm 在 POSIX 上给 bin 加执行位、在 Windows
-上生成 `.cmd`/`.ps1` shim，所以四种调用方式都验过（见下面的"验证"）。Windows 上路径里的
-反斜杠会统一成 `/` 写进 YAML。
+上生成 `.cmd`/`.ps1` shim。复制进 preset 的 Core 在 POSIX 上会 chmod 755。Windows 上路径
+里的反斜杠会统一成 `/` 写进 YAML。
 
 **改名不用重启，改行为要重启。** roster 每次调用都重读目录，所以显示名、说明立刻生效；
 但 preset 一旦被某个会话挂载过，这份组合就钉在那个进程里直到进程退出
 （DSH 的 standing mount 语义）。改完 preset 或插件代码要重启一次 DSH 进程。
+
+## 发布前检查表
+
+- [ ] **包名可用性**：`@repo-tutor` scope 没有确认过（`npm view @repo-tutor/core-win32-x64`
+      需要联网）。换 scope 只改 `platforms.config.json` 的 `scope`，然后
+      `node scripts/make-platform-packages.mjs --sync` 重新生成 optionalDependencies。
+- [ ] **LICENSE**：当前是 MIT（`LICENSE` 文件 + `package.json` 的 `license`），发布前由维护者确认。
+- [ ] 平台包与主包**同版本**：`--sync` 之后 `optionalDependencies` 用的是精确版本，CI 会再断言一次。
+- [ ] macOS arm64：`platforms.config.json` 里带 `unverified` 标记，只有在原生 macOS runner
+      上真跑过才去掉。
+- [ ] `npm publish` 是手工步骤，CI 不自动发布。
 
 ## 工具
 

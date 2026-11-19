@@ -37,16 +37,24 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  chmodSync,
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import {
+  expectedProtocolVersion,
+  findPlatformCore,
+  missingPlatformCoreMessage,
+} from '../src/platform-core.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
 const templateDir = join(packageRoot, 'preset')
 const VENDOR_DIR = 'plugin'
+const BIN_DIR = 'bin'
 const MANIFEST_FILE = 'installed.json'
 
 // ── 小工具 ────────────────────────────────────────────────────────────────
@@ -182,7 +190,17 @@ if (mode === 'status') {
   }
   log(`state    : installed`)
   log(`version  : ${installed.version}`)
-  log(`corePath : ${installed.corePath ?? '(not pinned — the plugin reads REPO_TUTOR_CORE)'}`)
+  const core = installed.core ?? {}
+  log(
+    `core     : ${
+      core.mode === 'bundled'
+        ? `${core.path} (copied from ${core.from})`
+        : core.mode === 'external'
+          ? `${core.path} (external, --core)`
+          : '(none — the plugin will fall back to REPO_TUTOR_CORE)'
+    }`,
+  )
+  log(`protocol : ${installed.protocolVersion ?? '(unknown)'}`)
   log(`installed: ${installed.installedAt}`)
   const changed = Object.entries(installed.files ?? {})
     .filter(([rel, hash]) => {
@@ -282,11 +300,36 @@ if (existsSync(targetDir) && previous === undefined) {
 
 // YAML 单引号字符串：内部的单引号要写成两个。
 const yamlString = (value) => `'${value.replaceAll("'", "''")}'`
-const pinnedCore =
-  corePath ?? (previous?.corePath !== undefined && existsSync(previous.corePath) ? undefined : undefined)
-const coreLine = (corePath ?? previous?.corePath) === undefined
-  ? ''
-  : `    corePath: ${yamlString(String(corePath ?? previous?.corePath).replaceAll('\\', '/'))}`
+
+// ── Core 计划：默认把平台包的二进制复制进受管理的 bin/ ────────────────────
+//
+// 复制而不是写绝对路径，有两个原因：
+//   1. npx / npm 缓存随时会被清掉，写进持久化 preset 的绝对路径就失效了；
+//   2. preset 目录要能整体搬走 —— 里面的行必须是相对路径。
+// --core 保持"用户自己管"的语义：不复制，写绝对路径。
+let corePlan = { mode: 'none' }
+if (corePath !== undefined) {
+  corePlan = { mode: 'external', path: corePath }
+} else {
+  const platform = findPlatformCore(manifest, { requireFrom: import.meta.url })
+  if (platform.path !== undefined) {
+    corePlan = { mode: 'copy', source: platform.path, packageName: platform.packageName }
+  } else if ((process.env.REPO_TUTOR_CORE ?? '') !== '' && existsSync(process.env.REPO_TUTOR_CORE)) {
+    // 没装平台包但用户自己给了环境变量：也复制进来，preset 才算自包含。
+    corePlan = { mode: 'copy', source: process.env.REPO_TUTOR_CORE, packageName: 'REPO_TUTOR_CORE' }
+  } else {
+    corePlan = { mode: 'none', missing: platform.missing }
+  }
+}
+
+// 复制模式：<preset>/bin/<basename>，行里写相对插件目录的 ../bin/<basename>。
+const binRel = corePlan.mode === 'copy' ? `${BIN_DIR}/${basename(corePlan.source)}` : undefined
+const coreLine =
+  corePlan.mode === 'copy'
+    ? `    corePath: ${yamlString(`../${binRel.replaceAll('\\', '/')}`)}`
+    : corePlan.mode === 'external'
+      ? `    corePath: ${yamlString(corePlan.path.replaceAll('\\', '/'))}`
+      : ''
 
 // 先算好要写什么，再统一备份 / 覆盖，避免写一半。
 const outputs = new Map()
@@ -299,6 +342,24 @@ for (const name of ['preset.yml', 'agent.cordis.yml']) {
       .replaceAll('__REPO_TUTOR_CORE_LINE__', coreLine),
   )
 }
+
+// 复制出来的插件目录要有自己的 package.json：没有它，Node 会按最近的 package.json
+// 判断 .js 是不是 ESM（而 preset 目录上面通常什么都没有）。type: module 要写死。
+outputs.set(
+  `${VENDOR_DIR}/package.json`,
+  `${JSON.stringify(
+    {
+      name: manifest.name,
+      version: manifest.version,
+      private: true,
+      type: 'module',
+      description: 'Vendored copy of repo-tutor-dsh, installed into a DSH agent preset.',
+      repoTutor: { protocolVersion: expectedProtocolVersion(manifest) },
+    },
+    null,
+    2,
+  )}\n`,
+)
 
 const vendorFiles = new Map()
 for (const rel of walkFiles(join(packageRoot, 'src'))) {
@@ -323,14 +384,16 @@ function backupIfEdited(rel, nextContentHash) {
   backups.push(rel)
 }
 
-// 旧版本 plugin/ 里的文件如果这版没有了，也要清理（不残留失效路径）
-const staleVendor = []
+// 旧版本 vendor/ 或 bin/ 里的文件如果这版不再需要，就清掉（不残留失效路径、旧二进制）
+const managed = new Set([...outputs.keys(), ...vendorFiles.keys()])
+if (binRel !== undefined) managed.add(binRel)
+
+const staleFiles = []
 if (previous !== undefined) {
   for (const rel of Object.keys(previous.files ?? {})) {
-    if (!rel.startsWith(`${VENDOR_DIR}/`)) continue
-    if (vendorFiles.has(rel)) continue
+    if (managed.has(rel)) continue
     const abs = join(targetDir, rel)
-    if (existsSync(abs)) staleVendor.push(rel)
+    if (existsSync(abs)) staleFiles.push(rel)
   }
 }
 
@@ -339,7 +402,9 @@ const written = {}
 
 for (const [rel, content] of outputs) {
   backupIfEdited(rel, createHash('sha256').update(content).digest('hex'))
-  writeFileSync(join(targetDir, rel), content)
+  const dest = join(targetDir, rel)
+  mkdirSync(dirname(dest), { recursive: true })
+  writeFileSync(dest, content)
   written[rel] = createHash('sha256').update(content).digest('hex')
 }
 
@@ -351,7 +416,17 @@ for (const [rel, source] of vendorFiles) {
   written[rel] = sha256(dest)
 }
 
-for (const rel of staleVendor) {
+if (binRel !== undefined) {
+  const dest = join(targetDir, binRel)
+  mkdirSync(dirname(dest), { recursive: true })
+  backupIfEdited(binRel, sha256(corePlan.source))
+  cpSync(corePlan.source, dest)
+  // POSIX 上复制过来的文件不一定带执行位；Windows 没有这个概念。
+  if (process.platform !== 'win32') chmodSync(dest, 0o755)
+  written[binRel] = sha256(dest)
+}
+
+for (const rel of staleFiles) {
   rmSync(join(targetDir, rel), { force: true })
 }
 
@@ -360,7 +435,8 @@ const installed = {
   version: manifest.version,
   id,
   installedAt: new Date().toISOString(),
-  corePath: corePath ?? previous?.corePath,
+  core: corePlan.mode === 'copy' ? { mode: 'bundled', path: binRel, from: corePlan.packageName } : corePlan.mode === 'external' ? { mode: 'external', path: corePlan.path } : { mode: 'none' },
+  protocolVersion: expectedProtocolVersion(manifest),
   files: written,
 }
 writeFileSync(manifestPath, `${JSON.stringify(installed, null, 2)}\n`)
@@ -373,21 +449,26 @@ if (previous !== undefined && previous.version !== manifest.version) {
   log(`  version: ${previous.version} → ${manifest.version}`)
 }
 log(`  files  : ${Object.keys(written).length} managed (${vendorFiles.size} vendored)`)
-if (staleVendor.length > 0) log(`  removed: ${staleVendor.length} stale file(s) from the previous version`)
+if (binRel !== undefined && corePlan.mode === 'copy') {
+  log(`  core   : copied ${corePlan.packageName} → ${binRel} (relative path, no cache dependency)`)
+} else if (corePlan.mode === 'external') {
+  log(`  core   : external ${corePlan.path} (--core, not managed by this tool)`)
+}
+if (staleFiles.length > 0) {
+  log(`  removed: ${staleFiles.length} stale file(s) from the previous install`)
+  for (const rel of staleFiles) log(`           ${rel}`)
+}
 if (backups.length > 0) {
   warn(`you had edited ${backups.length} file(s); the old copies are in ${backupDir}`)
   for (const rel of backups) warn(`  ${rel}`)
 }
 
-const effectiveCore = corePath ?? previous?.corePath
-if (effectiveCore === undefined && (process.env.REPO_TUTOR_CORE ?? '') === '') {
-  warn(
-    'no --core given and REPO_TUTOR_CORE is empty: the plugin will refuse to mount until one is set',
-  )
-  warn('  fix: rerun with --core <path>, or export REPO_TUTOR_CORE before starting DSH')
-} else if (effectiveCore !== undefined && !existsSync(effectiveCore)) {
-  warn(`pinned corePath no longer exists: ${effectiveCore}`)
-  warn('  rerun with --core <path> after rebuilding the Core')
+if (corePlan.mode === 'none') {
+  warn('no platform package installed and no --core given: the preset cannot start the Core')
+  warn(`  ${corePlan.missing ?? 'no platform package for this platform'}`)
+  warn('  fix: npm i the matching @…/core-<platform>-<arch> package, or rerun with --core <path>')
+} else if (corePlan.mode === 'external' && !existsSync(corePlan.path)) {
+  warn(`pinned corePath no longer exists: ${corePlan.path}`)
 }
 
 log('')

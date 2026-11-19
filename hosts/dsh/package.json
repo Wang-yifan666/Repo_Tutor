@@ -8,6 +8,7 @@
     ".": "./src/index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./policies/tutor-prompt.md": "./policies/tutor-prompt.md",
+    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "bin": {
@@ -47,7 +48,17 @@
     "dsh": ">=0.1.6-alpha.1 <0.2.0"
   },
   "scripts": {
-    "verify": "node scripts/verify-package.mjs"
+    "verify": "node scripts/verify-package.mjs",
+    "platforms": "node scripts/make-platform-packages.mjs"
+  },
+  "repoTutor": {
+    "protocolVersion": "0.1",
+    "platformsConfig": "platforms.config.json"
+  },
+  "optionalDependencies": {
+    "@repo-tutor/core-win32-x64": "0.1.0",
+    "@repo-tutor/core-linux-x64": "0.1.0",
+    "@repo-tutor/core-darwin-arm64": "0.1.0"
   },
   "dsh": {
     "bundle": {
