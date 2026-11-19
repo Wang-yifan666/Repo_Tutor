@@ -230,8 +230,18 @@ try {
 }
 
 if (mode === 'expect-core-error') {
-  console.log('FAIL: apply succeeded although no core was available')
-  process.exit(1)
+  // Lazy resolution: apply succeeding is by design; the error must be explicit at use time.
+  // Resolve siblings from the plugin entry URL passed in argv, not from this harness file.
+  const { findPlatformCore, missingPlatformCoreMessage } = await import(new URL('./platform-core.mjs', pluginPath).href)
+  const { readFileSync } = await import('node:fs')
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', pluginPath), 'utf8'))
+  const message = missingPlatformCoreMessage(manifest, findPlatformCore(manifest, { requireFrom: pluginPath }))
+  if (!message.includes('REPO_TUTOR_CORE') || !message.includes('corePath')) {
+    console.log('FAIL: the lazy error does not name the escape hatches:', message)
+    process.exit(1)
+  }
+  console.log('OK: lazy missing-core error names REPO_TUTOR_CORE and corePath')
+  process.exit(0)
 }
 
 for (const { deps, callback } of deferred) {

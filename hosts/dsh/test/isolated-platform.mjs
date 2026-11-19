@@ -62,6 +62,43 @@ const work = mkdtempSync(join(tmpdir(), 'repo-tutor-p2-'))
 const dshHome = join(work, 'dsh-home')
 const workspace = join(work, 'fixture-repo')
 const packDir = join(work, 'pack')
+
+/**
+ * 打包并校验产物。先看子进程是否成功退出，再看 stdout 能不能解析，最后确认 tgz 真存在。
+ * 这样故障会准确落在"启动失败 / 非零退出 / 输出格式错 / 产物缺失"其中一档，
+ * 而不是抛一个 Unexpected end of JSON input。
+ */
+function packTarball(cwd, label) {
+  const result = npm(['pack', '--json', '--pack-destination', packDir], { cwd })
+  const diagnostics = [
+    `label: ${label}`,
+    `cwd: ${cwd}`,
+    `packDir: ${packDir}`,
+    `node: ${process.version}`,
+    `status: ${result.status}`,
+    `signal: ${result.signal}`,
+    `error: ${result.error?.message ?? 'none'}`,
+    `stdout(400): ${String(result.stdout ?? '').slice(0, 400)}`,
+    `stderr(400): ${String(result.stderr ?? '').slice(0, 400)}`,
+  ].join('\n  ')
+  if (result.error || result.status !== 0) throw new Error(`npm pack failed\n  ${diagnostics}`)
+  const output = String(result.stdout ?? '').trim()
+  if (output === '') throw new Error(`npm pack returned empty stdout\n  ${diagnostics}`)
+  let entries
+  try {
+    entries = JSON.parse(output.replace(/^[^[]*/, ''))
+  } catch (error) {
+    throw new Error(`invalid npm pack JSON (${error.message})\n  ${diagnostics}`)
+  }
+  const filename = entries?.[0]?.filename
+  if (typeof filename !== 'string' || filename === '') {
+    throw new Error(`npm pack returned no filename\n  ${diagnostics}`)
+  }
+  const tarball = resolve(packDir, filename)
+  if (!existsSync(tarball)) throw new Error(`tarball not found: ${tarball}\n  ${diagnostics}`)
+  console.log(`      packed ${label}: ${filename}`)
+  return tarball
+}
 mkdirSync(dshHome, { recursive: true })
 mkdirSync(join(workspace, 'src'), { recursive: true })
 mkdirSync(packDir, { recursive: true })
@@ -187,10 +224,8 @@ try {
   const made = run(process.execPath, [join(packageRoot, 'scripts', 'make-platform-packages.mjs'), '--core', corePath])
   check(made.status === 0, 'platform package built', (made.stdout ?? '').slice(-200) || (made.stderr ?? '').slice(-200))
   const platformDir = join(packageRoot, 'dist', 'platforms', suffix)
-  const packedPlatform = npm(['pack', '--json', '--pack-destination', packDir], { cwd: platformDir })
-  const packedMain = npm(['pack', '--json', '--pack-destination', packDir], { cwd: packageRoot })
-  const platformTgz = join(packDir, JSON.parse(packedPlatform.stdout.replace(/^[^[]*/, '')).at(0).filename)
-  const mainTgz = join(packDir, JSON.parse(packedMain.stdout.replace(/^[^[]*/, '')).at(0).filename)
+  const platformTgz = packTarball(platformDir, 'platform')
+  const mainTgz = packTarball(packageRoot, 'main')
   check(existsSync(platformTgz) && existsSync(mainTgz), 'both tarballs exist')
 
   // ── 2. 隔离 profile：两个 tarball 一次装上 ─────────────────────────────
@@ -259,14 +294,17 @@ try {
 
   const preset = await bootAndRun({ label: 'preset', profile: 'tutor-e2e', overlay: bundleEmpty })
   check(preset.result !== undefined, 'B: the probe answered in preset mode after the cache was deleted', preset.log.slice(-500))
+  console.log('      B tool sequence: ' + JSON.stringify(preset.result?.toolCalls ?? []))
+  console.log('      B session end  : ' + String(preset.result?.idle))
   if ((preset.result?.agentTools?.tutorStatus ?? false) === false) {
     console.log('---- preset boot log (tail) ----')
     console.log(String(preset.log).split('\n').slice(-40).join('\n'))
   }
+  const expected = ['tutor_status', 'tutor_scan_repository', 'tutor_propose_learning_map', 'tutor_open_unit', 'tutor_evidence_read', 'tutor_complete_unit']
+  const seenCalls = preset.result?.toolCalls ?? []
   check(
-    (preset.result?.toolCalls ?? []).includes('tutor_status') &&
-      (preset.result?.toolCalls ?? []).includes('tutor_complete_unit'),
-    'B: the vendored plugin + vendored Core still run a full unit without node_modules',
+    expected.every((name) => seenCalls.includes(name)),
+    'B: the model called all six tutor tools through the vendored plugin + vendored Core',
     JSON.stringify(preset.result ?? {}, null, 2),
   )
 } catch (error) {
