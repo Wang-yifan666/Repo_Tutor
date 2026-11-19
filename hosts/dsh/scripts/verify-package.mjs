@@ -99,6 +99,17 @@ try {
       'the package LICENSE is the repository LICENSE, not a drifting copy',
     )
   }
+  const licenceText = readFileSync(join(packageRoot, 'LICENSE'), 'utf8')
+  check(manifest.license === 'MIT', 'the package declares the MIT licence', String(manifest.license))
+  check(
+    licenceText.includes('Copyright (c) 2026 Wang-yifan666'),
+    'LICENSE carries the maintainer copyright line (the GitHub handle, one spelling only)',
+  )
+  check(
+    typeof manifest.author === 'string' && manifest.author.includes('Wang-yifan666'),
+    'package.json author names the same handle as LICENSE',
+    String(manifest.author),
+  )
   check(existsSync(join(packageRoot, 'README.md')), 'README.md ships with the package')
   check(
     existsSync(join(packageRoot, 'policies', 'tutor-prompt.md')),

@@ -167,6 +167,18 @@ for (const target of publishable) {
     check(statSync(binary).size > 100_000, `${suffix} binary looks like a real executable (${statSync(binary).size} bytes)`)
     check(existsSync(join(dir, 'LICENSE')), `${suffix} carries LICENSE`)
     check(existsSync(join(dir, 'THIRD-PARTY-NOTICES.md')), `${suffix} carries THIRD-PARTY-NOTICES.md`)
+    // 平台包是单独发布的：许可证必须和主包逐字节一致，不能是另一份手抄的。
+    check(
+      existsSync(join(dir, 'LICENSE')) &&
+        readFileSync(join(dir, 'LICENSE')).equals(readFileSync(join(packageRoot, 'LICENSE'))),
+      `${suffix} carries the same LICENSE bytes as the main package`,
+    )
+    check(
+      platformManifest.author === manifest.author,
+      `${suffix} inherits the main package author`,
+      String(platformManifest.author),
+    )
+    check(platformManifest.license === manifest.license, `${suffix} inherits license: ${manifest.license}`)
   } else {
     check(false, `${suffix} binary is where repoTutor.core says`, `missing ${binary}`)
   }
@@ -244,6 +256,10 @@ const FORBIDDEN = [
   /(^|\/)\.dsh\//,
 ]
 
+// 唯一正确的署名写法；LICENSE 里那行必须逐字等于它，别处不许出现别的署名。
+const COPYRIGHT_HOLDER = 'Wang-yifan666'
+const COPYRIGHT_LINE = `Copyright (c) 2026 ${COPYRIGHT_HOLDER}`
+
 // 文件名挡得住的东西之外，还要读一遍内容：凭据和「这台机器」的痕迹。
 const CONTENT_LEAKS = [
   { name: 'private key', pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
@@ -274,6 +290,7 @@ for (const { tarball, info, label } of packed) {
   const untar = run('tar', ['-xzf', tarball, '-C', extractDir])
   check(untar.status === 0, `${label} tarball extracts`)
   const found = []
+  const narrative = new Map()
   const walk = (dir) => {
     for (const item of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, item.name)
@@ -293,10 +310,36 @@ for (const { tarball, info, label } of packed) {
         const match = pattern.exec(text)
         if (match !== null) found.push(`${relative(extractDir, full)}: ${match[0].slice(0, 60)}`)
       }
+      // 署名只有一个正确写法：许可证里那行必须是它，别的任何版权行都说明有人抄了旧版本。
+      if (/(^|[\\/])(LICENSE|README\.md|THIRD-PARTY-NOTICES\.md|package\.json)$/i.test(full)) {
+        narrative.set(relative(extractDir, full).replaceAll('\\', '/'), text)
+      }
     }
   }
   walk(extractDir)
   check(found.length === 0, `${label} tarball content has no credentials or machine-specific paths`, found.join('\n      '))
+
+  // 许可证那一行必须逐字相等；别处出现任何不是这个署名的版权行，都算没清干净。
+  const licence = narrative.get('package/LICENSE') ?? ''
+  const licenceLines = licence.split(/\r?\n/).filter((line) => line.includes('Copyright (c)'))
+  check(
+    licenceLines.length === 1 && licenceLines[0].trim() === COPYRIGHT_LINE,
+    `${label} LICENSE states exactly "${COPYRIGHT_LINE}"`,
+    JSON.stringify(licenceLines),
+  )
+  const staleLines = []
+  for (const [file, text] of narrative) {
+    if (file === 'package/LICENSE') continue
+    for (const line of text.split(/\r?\n/)) {
+      // 只有「2026 后面不是这个署名」才算问题；说明文里引用正确写法的句子不受影响。
+      if (/Copyright \(c\) \d{4} (?!Wang-yifan666\b)/.test(line)) staleLines.push(`${file}: ${line.trim()}`)
+    }
+  }
+  check(
+    staleLines.length === 0,
+    `${label} tarball restates no other copyright holder`,
+    staleLines.join('\n      '),
+  )
 
   const digest = sha256(tarball)
   console.log(`      ${info.filename}  files=${entries.length}  size=${info.size}  sha256=${digest.slice(0, 16)}…`)

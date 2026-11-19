@@ -1,10 +1,28 @@
 # Third-party notices
 
-`repo-tutor-dsh` itself is MIT (see `LICENSE`). This file records what else ends up inside
-the published packages, because a static binary carries code that is not ours.
+`repo-tutor-dsh` itself is MIT, Copyright (c) 2026 Wang-yifan666
+(https://github.com/Wang-yifan666) — see `LICENSE`. This file records what else ends up
+inside the published packages, because a static binary carries code that is not ours.
 
 The short version: **no third-party npm dependency, no third-party C++ library.**
-The only foreign code is the C++ runtime that gets linked into `repo-tutor-core`.
+The only foreign code is the C++ runtime that gets linked into `repo-tutor-core`, and every
+piece of it keeps its own copyright holder — nothing below is relicensed to us, and nothing
+of ours is relicensed to them.
+
+## Copyright holders
+
+| Work | Copyright holder | Licence |
+|---|---|---|
+| `repo-tutor-dsh`, `repo-tutor-core` | Wang-yifan666 | MIT |
+| libstdc++, libgcc, libgcc_eh | Free Software Foundation, Inc. | GPL-3.0-or-later **with the GCC Runtime Library Exception** |
+| mingw-w64 C runtime, libwinpthread | the mingw-w64 project | ZPL-2.1 / public-domain parts |
+| glibc (`libc.so.6`, `libm.so.6`, `ld-linux`) | glibc project, primarily Free Software Foundation, Inc. | LGPL-2.1-or-later |
+| Linux kernel vDSO | Linux kernel contributors | GPL-2.0 (not redistributed) |
+| `KERNEL32.dll`, `msvcrt.dll` | Microsoft Corporation | ships with Windows, not redistributed |
+
+Full licence texts ship with the toolchain and the operating system; they are not restated
+here. What matters for redistribution is that none of them is modified, and that the GCC
+Runtime Library Exception covers the statically linked runtime.
 
 ## JavaScript side: nothing to declare
 

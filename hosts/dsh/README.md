@@ -151,10 +151,11 @@ npx repo-tutor-dsh@next --help
 npm run check          # = node scripts/release-check.mjs
 ```
 
-`release-check.mjs` 查七件事，全绿才谈发布：版本一致性（主包 == 每个平台包 ==
+`release-check.mjs` 查八件事，全绿才谈发布：版本一致性（主包 == 每个平台包 ==
 `optionalDependencies` 的精确值）、依赖表 == 可发布平台集合、`publishConfig` 的
 access/tag、**每个包各自一个隔离目录**打包（并发跑不会互相覆盖）、tarball 清单与敏感
-文件、SHA-256、`npm publish --dry-run`。产物落在 `dist/rc/<时间戳>/`，附带
+文件、**署名只有一个写法**（`Copyright (c) 2026 Wang-yifan666`，平台包的 LICENSE 必须与
+主包逐字节相同）、SHA-256、`npm publish --dry-run`。产物落在 `dist/rc/<时间戳>/`，附带
 `SHA256SUMS`。
 
 **顺序不能反**：平台包先发，主包最后发。反过来不会「装不上」，会更糟 —— 实测只装主包
@@ -294,4 +295,4 @@ BUILD=build/rc-linux bash hosts/dsh/test/linux-native.sh   # WSL / Linux 上的�
 - Core 在 stdin EOF 时自行退出，所以强杀宿主不会留下孤儿进程（实测有效，
   但没有兜底以外的保证）。
 
-MIT License.
+MIT — Copyright (c) 2026 Wang-yifan666 (https://github.com/Wang-yifan666).

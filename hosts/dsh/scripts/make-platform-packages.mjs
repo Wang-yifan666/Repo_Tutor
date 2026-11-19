@@ -187,6 +187,8 @@ const platformManifest = {
   version,
   description: `repo-tutor-core (${suffix}) — the C++ teaching core for repo-tutor-dsh`,
   license: manifest.license,
+  author: manifest.author,
+  homepage: manifest.homepage,
   repository: manifest.repository,
   os: [target.platform],
   cpu: [target.arch],

@@ -49,9 +49,9 @@ registry 上的字节就是这张表里算过的那一份。
 
 | 文件 | 字节 | SHA-256 |
 |---|---|---|
-| `repo-tutor-dsh-0.1.0-rc.1.tgz` | 44 308 | `1615378ccc6ccbe4cf236b2c3700631fb364f4dd2a4f83be27aa1df5ae892fa8` |
-| `repo-tutor-core-win32-x64-0.1.0-rc.1.tgz` | 674 673 | `34c0001a1e88ef223cf80cae8a3bc4f5f8e8cbab4a41ffda32ebea159a7106ed` |
-| `repo-tutor-core-linux-x64-0.1.0-rc.1.tgz` | 608 455 | `fed2a718aba40883e3665132c93d92288959cd0a8725b261dcb91a0d3d609eab` |
+| `repo-tutor-dsh-0.1.0-rc.1.tgz` | 45 702 | `6e3eed96cb70f43a39e72821bc2b938315699b525798c9545ca73427f3cb3860` |
+| `repo-tutor-core-win32-x64-0.1.0-rc.1.tgz` | 675 037 | `d6449c66468d57fcc5597c1ae666dd61f59c2bf03aa56528ad32148c0859d1a3` |
+| `repo-tutor-core-linux-x64-0.1.0-rc.1.tgz` | 608 839 | `8030b99acc8d1fde80c56d56e416915555af167d32261b1e6e1ec2b63caaf16b` |
 
 包里的二进制：
 
@@ -73,8 +73,8 @@ registry 上的字节就是这张表里算过的那一份。
 | 安装器生命周期 | 通过 | 临时 `DSH_HOME`，31 项链路断言 |
 | 作用域 | 通过 | 全局视图没有 Tutor 工具；标准 agent 没有 Tutor 工具；导师 agent 没有 `read` |
 | 破坏测试 | 通过 | 弄坏 preset 入口 → 工具确实不可调用 |
-| 发布自检 | 74 项 | 版本一致性、依赖表、tarball 清单、内容扫描、SHA-256、`publish --dry-run` |
-| 安装自检 | 51 项 | 解包、临时 `DSH_HOME` 里跑安装器、真实 Core 往返 |
+| 发布自检 | 86 项 | 版本一致性、依赖表、署名、tarball 清单、内容扫描、SHA-256、`publish --dry-run` |
+| 安装自检 | 54 项 | 解包、临时 `DSH_HOME` 里跑安装器、真实 Core 往返 |
 | 端到端 | 通过 | 真实模型，Bundle 与 Preset 各一轮 |
 
 ## 已知限制
@@ -101,5 +101,6 @@ npx repo-tutor-dsh@next --uninstall   # 卸载，改过的文件移到 kept-<时
 
 ## 许可证
 
-MIT。静态链接的 libstdc++ / libgcc / mingw-w64 运行时归属见 `THIRD-PARTY-NOTICES.md`：
+MIT，Copyright (c) 2026 Wang-yifan666（https://github.com/Wang-yifan666）。
+静态链接的 libstdc++ / libgcc / mingw-w64 运行时归属见 `THIRD-PARTY-NOTICES.md`：
 GCC 运行时库例外允许以 MIT 分发编译产物，glibc 动态链接未修改，不吸收 GPL 源码。
