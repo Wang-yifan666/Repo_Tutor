@@ -14,10 +14,14 @@
     },
     {
       "name": "dev-mingw",
-      "displayName": "Dev（MinGW Makefiles）",
-      "description": "Windows/MinGW。使用 mingw32-make；要求 PATH 上可找到 g++。",
+      "displayName": "Dev（MinGW Makefiles + clang++）",
+      "description": "Windows/MinGW 运行时，用 clang++ 编译。本机 g++ 11.2.0 编标准库代码会 ICE，所以换 clang。",
       "generator": "MinGW Makefiles",
-      "binaryDir": "${sourceDir}/build/dev-mingw"
+      "binaryDir": "${sourceDir}/build/dev-mingw",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_CXX_FLAGS": "--target=x86_64-w64-windows-gnu"
+      }
     }
   ],
   "buildPresets": [

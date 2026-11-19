@@ -1,0 +1,5 @@
+# Repo Tutor 的 DSH 层：插一行 host 插件，把 C++ Core 接进来。
+# 插件本身只做协议转发和生命周期管理，Tutor 逻辑都在 core 里。
+- insert:
+    - id: repo-tutor
+      name: repo-tutor-dsh

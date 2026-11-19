@@ -1,0 +1,12 @@
+{
+  "name": "repo-tutor-dsh",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.js",
+  "files": ["src", "cordis.patch.yml"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

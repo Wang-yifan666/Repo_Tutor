@@ -1,8 +1,12 @@
-# 宿主无关的 Core 库。Batch 1 只放了一个版本号产物，
-# 领域模型和 Tutor 引擎后面再加。
-
+# 宿主无关的 Core 库。M1：值类型 + Topic Lock + Depth + RepositoryMap + Evidence Budget；
+# M3 再加 Question 契约。
 add_library(repo_tutor_core STATIC
   src/version.cpp
+  src/topic_lock.cpp
+  src/depth.cpp
+  src/repository_map.cpp
+  src/evidence_budget.cpp
+  src/question.cpp
 )
 add_library(repo_tutor::core ALIAS repo_tutor_core)
 

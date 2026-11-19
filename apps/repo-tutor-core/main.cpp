@@ -1,13 +1,25 @@
-#include <repo_tutor/version.hpp>
+#include <iostream>
+#include <string>
 
-#include <cstdio>
+#include "protocol.hpp"
 
-// Batch 1 只干一件事：让可执行文件进程边界（apps/repo-tutor-core）
-// 链接上宿主无关的 Core 库（core/），跑起来。现在还不做任何协议 I/O，
-// 宿主无关的 Tutor 协议目前只是 docs/protocol.md 里的一份 DRAFT。
+// M2：stdio 上逐行收 JSON-RPC 请求，逐行回响应。
+// Framing 就是一行一个 JSON 对象；stderr 留给日志。
 
 int main()
 {
-	std::printf("repo-tutor-core %s\n", repo_tutor::version_string());
+	repo_tutor::protocol::Server server;
+
+	std::string line;
+	while(std::getline(std::cin, line))
+	{
+		const std::string response = server.handle_line(line);
+		if(!response.empty())
+		{
+			std::cout << response << '\n';
+			std::cout.flush();
+		}
+	}
+
 	return 0;
 }
