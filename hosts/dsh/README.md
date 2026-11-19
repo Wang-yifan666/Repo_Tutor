@@ -48,7 +48,7 @@ node hosts/dsh/test/client-smoke.mjs "<repo>/build/dev-mingw/apps/repo-tutor-cor
 | 变量 | 作用 |
 |---|---|
 | `REPO_TUTOR_CORE` | 必填。`repo-tutor-core` 可执行文件路径。 |
-| `REPO_TUTOR_ROOT` | 会话的仓库根。不设就用宿主进程的 `process.cwd()`。 |
+| `REPO_TUTOR_ROOT` | 覆盖仓库根。不设就跟着**会话自己的工作目录**走（DSH Web 里换 workspace，tutor 就跟着换）。脚本和测试用它钉住目标仓库。 |
 | `REPO_TUTOR_TRACE` | 非空且非 `0` 时，Core 把每条请求和响应摘一行到 stderr。调试和验证用。 |
 
 ## 工具
@@ -112,8 +112,16 @@ question → answer → evaluation → complete → 下一个单元。判定不�
 
 在解决这两点之前，工具输出和 `/tutor` 命令就是当前的 UI surface。
 
+## 生命周期
+
+- Core 按**仓库根**一份：同一个仓库的两个对话共享同一份学习状态（地图、进度一起走），
+  不同仓库各用各的 Core，互不干扰。插件卸载时全部关掉。
+- 仓库根的来源是这条调用所属会话的工作目录（`agent.session.header.cwd`），
+  不是宿主进程的 cwd。DSH Web 里一个会话可以有自己的 workspace，两者本来就不一样。
+- Core 在 stdin EOF 时自行退出，所以强杀宿主时不会留下孤儿进程。
+
 ## 已知风险
 
-- 强杀 DSH 进程时插件 disposer 不执行，Core 会残留；目前靠 Core 在 stdin
-  EOF 时自行退出兜底。
-- Core 是按插件实例唯一的：一个 DSH 进程里多个 agent 共用一份会话状态。
+- 强杀 DSH 进程时插件 disposer 不执行；目前靠 Core 在 stdin EOF 时自行退出兜底
+  （实测有效，但没有兜底以外的保证）。
+- 同一仓库的两个对话共享学习状态，所以别在两边同时教不同的单元，会互相把当前单元切走。

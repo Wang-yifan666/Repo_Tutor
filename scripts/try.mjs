@@ -100,7 +100,7 @@ writeFileSync(overlay, `- insert:\n    - id: repo-tutor\n      name: '${pluginPa
 
 console.log(`repo under tutelage: ${target}`)
 console.log(`core executable   : ${exePath}`)
-console.log(`workspace / cwd   : ${target}（DSH 的 workspace 和 tutor 的仓库根是同一个）`)
+console.log(`workspace / cwd   : ${target}（新会话默认就教这个仓库）`)
 console.log('')
 
 const child = spawn(
@@ -112,7 +112,8 @@ const child = spawn(
     env: {
       ...process.env,
       REPO_TUTOR_CORE: exePath,
-      REPO_TUTOR_ROOT: target,
+      // 故意不设 REPO_TUTOR_ROOT：仓库根跟着会话自己的工作目录走，
+      // 你在 UI 里换 workspace，tutor 就跟着换。设了反而钉死。
       // 从别的目录启动时，tsx 默认拿 cwd 找 tsconfig，会把 workspace 包解析错。
       TSX_TSCONFIG_PATH: tsconfig,
     },

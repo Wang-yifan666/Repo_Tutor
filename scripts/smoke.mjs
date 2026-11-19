@@ -35,6 +35,10 @@ run('ctest', ['--preset', preset, '--output-on-failure'])
 // 3. adapter ↔ core 协议走查（不依赖 DSH）
 run(process.execPath, [join(root, 'hosts', 'dsh', 'test', 'client-smoke.mjs'), exePath])
 
+// 3.5 插件接线：11 个工具 / 教学 prompt 小节 / /tutor 命令都注册上，
+//     仓库根取自会话的工作目录而不是宿主进程 cwd。
+run(process.execPath, [join(root, 'hosts', 'dsh', 'test', 'plugin-wiring.mjs'), exePath])
+
 // 4. 模型驱动验证是可选的：要 DSH checkout，还会真的调模型。
 if (process.argv.includes('--model')) {
   if (process.env.DSH_HARNESS === undefined || process.env.DSH_HARNESS === '') {

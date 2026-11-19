@@ -56,7 +56,7 @@ writeFileSync(overlay, `- insert:\n    - id: repo-tutor\n      name: '${pluginPa
 
 // ── 让模型把闭环跑完 ──────────────────────────────────────────────────────
 
-const task = `AUTOMATED SMOKE TEST — there is no human in this session. You are both the tutor and the learner, and you must finish everything in this run.
+const task = `AUTOMATED SMOKE TEST — there is no human in this session. You are both the tutor and the learner, and you must finish everything in this run. Do not call ask_user_question: nobody can answer here.
 
 Exercise the complete Repo Tutor loop on the repository at ${fixture}, in exactly this order:
 1. tutor_status
