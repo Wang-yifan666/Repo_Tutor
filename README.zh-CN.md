@@ -72,27 +72,39 @@ node scripts/install-preset.mjs
 ## 当 npm 包装
 
 `hosts/dsh/` 本身就是一个符合 DSH Bundle 规范的 npm 包（`dsh.bundle.patch` 指到
-`cordis.patch.yml`），可以直接 `npm pack` 分发：
+`cordis.patch.yml`），C++ Core 则按平台单独发行，版本锁死在同一号：
+
+| npm 包 | 是什么 |
+|---|---|
+| `repo-tutor-dsh` | 插件本体、导师模式安装器、bundle patch |
+| `@repo-tutor/core-win32-x64` | Windows x64 的 Core 二进制（端到端验证过） |
+| `@repo-tutor/core-linux-x64` | Linux x64 的 Core 二进制（WSL2 Ubuntu 上构建并过了协议测试，要求 glibc ≥ 2.38） |
+
+macOS 不发：没人在真机上跑过，就不宣称支持 —— `platforms.config.json` 里
+`darwin-arm64` 是 `publish: false`。
+
+`0.1.0-rc.1` 是预发布版，只挂在 `next` 标签上，装的时候要写出来：
 
 ```sh
-cd hosts/dsh
-npm pack                                    # 出 tarball
-npm run verify                              # 发布自检：白名单 / 解包 / 安装器 / 真实 Core 往返
-dsh plugin --profile <name> add ./repo-tutor-dsh-0.1.0.tgz
-```
-
-装完记得给 `REPO_TUTOR_CORE`——这一阶段 `repo-tutor-core` 不随包分发。
-
-导师模式用包里的 bin 装（bin 名和包名一致，`npx` 才解析得到）：
-
-```sh
-npx repo-tutor-dsh --core /path/to/repo-tutor-core   # 已装进本地
-npx --yes --package repo-tutor-dsh repo-tutor-dsh    # 没装，跑一次
-npx repo-tutor-dsh --status | --uninstall | --version | --help
+dsh plugin --profile <name> add repo-tutor-dsh@next       # Bundle 模式，平台 Core 一起装下来
+npx repo-tutor-dsh@next                                    # 装导师模式
+npx repo-tutor-dsh@next --core /path/to/repo-tutor-core     # 或者自己管 Core
+npx repo-tutor-dsh@next --status | --uninstall | --version | --help
 ```
 
 它会把插件复制进 preset 目录，不依赖你本地有源码仓库；重复安装就地升级，
 本地改过的文件先备份，上一版有、这一版没有的文件会被清掉。
+
+两个闸，都在 `hosts/dsh` 下跑：
+
+```sh
+npm run check     # 发布自检：版本一致性、依赖锁、隔离打包、tarball 清单、SHA-256、publish --dry-run
+npm run verify    # 安装自检：白名单、解包、临时 DSH_HOME 里的安装器、真实 Core 往返
+```
+
+已知限制（macOS 不支持、Linux 的 glibc 下限、DSH 0.2.x 没测）和排错清单在
+`hosts/dsh/README.md`。
+
 
 ## 测试
 
@@ -111,12 +123,14 @@ node scripts/smoke.mjs --model             # 再加上模型驱动验证（要 D
 - 11 个 `tutor_*` 工具 + `/tutor` 命令
 - 完整教学闭环跑通：模型自己驱完一整轮，中途还会用 depth 下钻
 - 第五个模式「导师模式」
+- `0.1.0-rc.1` 的 npm 包：主包，加 Windows x64 / Linux x64 两个平台包
 
 **还没做**
 
 - 会话内的 Conversation Node UI（两个障碍记在 `hosts/dsh/README.md`）
 - 仓库分析只到文件级，没有符号表、调用图
-- 打包发布：现在只能用 `--patch` 或装 preset
+- macOS arm64：CI 矩阵里会构建，但标着 `publish: false` —— 真机上一轮都没跑过
+- CI workflow 一次都没执行过（这些轮次都没推送），目前所有结果都是本地的
 - 同一仓库的两个对话共享一份学习状态，别同时教两个单元
 
 ## 目录

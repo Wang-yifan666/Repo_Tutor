@@ -72,28 +72,41 @@ node scripts/install-preset.mjs
 ## As an npm package
 
 `hosts/dsh/` is itself a DSH bundle package (`dsh.bundle.patch` points at
-`cordis.patch.yml`), so it distributes with plain `npm pack`:
+`cordis.patch.yml`), and the C++ Core ships as per-platform packages pinned to the
+exact same version:
+
+| npm package | what it is |
+|---|---|
+| `repo-tutor-dsh` | the plugin, the Tutor-mode installer, the bundle patch |
+| `@repo-tutor/core-win32-x64` | Windows x64 Core binary (verified end to end) |
+| `@repo-tutor/core-linux-x64` | Linux x64 Core binary (built and protocol-tested on WSL2 Ubuntu; requires glibc ≥ 2.38) |
+
+macOS is not published. Nothing has been run on a real Mac, so nothing is claimed
+for it — `platforms.config.json` marks `darwin-arm64` as `publish: false`.
+
+`0.1.0-rc.1` is a prerelease living on the `next` dist-tag, so installs have to say so:
 
 ```sh
-cd hosts/dsh
-npm pack                                    # produce the tarball
-npm run verify                              # publish gate: whitelist, unpack, installer, live Core round-trip
-dsh plugin --profile <name> add ./repo-tutor-dsh-0.1.0.tgz
+dsh plugin --profile <name> add repo-tutor-dsh@next        # Bundle mode; pulls the platform Core
+npx repo-tutor-dsh@next                                    # install the Tutor mode
+npx repo-tutor-dsh@next --core /path/to/repo-tutor-core     # or bring your own Core
+npx repo-tutor-dsh@next --status | --uninstall | --version | --help
 ```
 
-Point `REPO_TUTOR_CORE` at the executable afterwards — `repo-tutor-core` is not
-shipped with the package yet. The Tutor mode installs through the package's bin
-(the bin is named `repo-tutor-dsh`, same as the package, so `npx` resolves it):
+The installer vendors the plugin into the preset directory, so it never needs a source
+checkout on the machine. Re-running it upgrades in place, backs up anything you edited
+locally, and removes files the previous version left behind.
+
+Gates, both runnable from `hosts/dsh`:
 
 ```sh
-npx repo-tutor-dsh --core /path/to/repo-tutor-core   # installed locally
-npx --yes --package repo-tutor-dsh repo-tutor-dsh    # one-off, not installed
-npx repo-tutor-dsh --status | --uninstall | --version | --help
+npm run check     # release: version consistency, dependency pins, isolated packing, tarball contents, SHA-256, publish --dry-run
+npm run verify    # install: whitelist, unpack, installer with a temp DSH_HOME, live Core round-trip
 ```
 
-It vendors the plugin into the preset directory, so it never needs a source
-checkout on the machine. Re-running it upgrades in place, backs up anything you
-edited locally, and removes files the previous version left behind.
+Known limits (no macOS, the Linux glibc floor, untested DSH 0.2.x) and an error
+catalogue live in `hosts/dsh/README.md`.
+
 
 ## Tests
 
@@ -112,12 +125,14 @@ node scripts/smoke.mjs --model             # plus model-driven checks (needs DSH
 - 11 `tutor_*` tools and the `/tutor` command
 - The full teaching loop, driven end to end by the model (it even uses depth dives on its own)
 - The fifth mode, Tutor
+- npm packages at `0.1.0-rc.1`: main package plus Windows x64 and Linux x64 Core packages
 
 **Not done**
 
 - An in-session Conversation Node UI (the two blockers are recorded in `hosts/dsh/README.md`)
 - Repository analysis stops at the file level — no symbols, no call graph
-- Packaging: today it runs from `--patch` or an installed preset
+- macOS arm64: builds in CI's matrix but is marked `publish: false` — nothing has run on a real Mac
+- The CI workflow has never executed (nothing was pushed); every result so far is local
 - Two conversations in the same repo share one tutor state, so don't teach two units at once
 
 ## Layout
