@@ -281,8 +281,17 @@ function installEvidenceFirewall(ctx) {
 }
 
 export function apply(ctx, config) {
-  const core = resolveCore(config)
-  const exePath = core.path
+  // 不在 apply 里解析 Core：挂载期抛异常会让整行静默 "never started"，
+  // 排查代价极高（Phase 2.1 踩过一次）。改成第一次真要 spawn 时再解析，
+  // 错误以工具结果的形式露出，行本身始终是活的。
+  if (config === undefined || Object.keys(config).length === 0) {
+    console.log('[repo-tutor] warning: the plugin row passed no config; corePath/alwaysOn are unset')
+  }
+  let core
+  const coreInfo = () => {
+    if (core === undefined) core = resolveCore(config)
+    return core
+  }
   // 专用导师模式（preset 里 alwaysOn: true）：整段会话都是教学，没有"是否触发"这一说。
   const alwaysOn = config?.alwaysOn === true
   const openingLine = alwaysOn ? GUIDANCE_ALWAYS : GUIDANCE_TRIGGER
@@ -321,7 +330,8 @@ export function apply(ctx, config) {
   function coreFor(root) {
     let entry = cores.get(root)
     if (entry === undefined) {
-      const client = new CoreClient(exePath, {
+      const resolved = coreInfo()
+      const client = new CoreClient(resolved.path, {
         onStderr: (line) => console.log(`[repo-tutor] ${line}`),
       })
       const ready = (async () => {
@@ -332,14 +342,14 @@ export function apply(ctx, config) {
           client.close()
           throw new Error(
             `repo-tutor-dsh: protocol mismatch — this plugin speaks ${PROTOCOL_VERSION}, ` +
-              `but the Core at ${exePath} (${core.source}) negotiated ${String(actual)}. ` +
+              `but the Core at ${resolved.path} (${resolved.source}) negotiated ${String(actual)}. ` +
               'Mixing a plugin and a Core from different versions is not supported; reinstall so they match.',
           )
         }
-        if (core.protocolVersion !== undefined && core.protocolVersion !== PROTOCOL_VERSION) {
+        if (resolved.protocolVersion !== undefined && resolved.protocolVersion !== PROTOCOL_VERSION) {
           client.close()
           throw new Error(
-            `repo-tutor-dsh: platform package ${core.source} declares protocol ${core.protocolVersion}, ` +
+            `repo-tutor-dsh: platform package ${resolved.source} declares protocol ${resolved.protocolVersion}, ` +
               `this plugin speaks ${PROTOCOL_VERSION}. Versions drifted between packages.`,
           )
         }
