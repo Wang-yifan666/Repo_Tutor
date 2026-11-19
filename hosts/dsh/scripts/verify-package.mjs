@@ -88,6 +88,17 @@ try {
     'engines.node is declared',
   )
   check(existsSync(join(packageRoot, 'LICENSE')), 'LICENSE ships with the package')
+  check(
+    existsSync(join(packageRoot, 'THIRD-PARTY-NOTICES.md')),
+    'THIRD-PARTY-NOTICES.md records the statically linked C++ runtime',
+  )
+  if (existsSync(join(packageRoot, '..', '..', 'LICENSE'))) {
+    check(
+      readFileSync(join(packageRoot, 'LICENSE'), 'utf8') ===
+        readFileSync(join(packageRoot, '..', '..', 'LICENSE'), 'utf8'),
+      'the package LICENSE is the repository LICENSE, not a drifting copy',
+    )
+  }
   check(existsSync(join(packageRoot, 'README.md')), 'README.md ships with the package')
   check(
     existsSync(join(packageRoot, 'policies', 'tutor-prompt.md')),
@@ -97,6 +108,36 @@ try {
     !existsSync(join(packageRoot, '..', '..', 'policies', 'tutor-prompt.md')),
     'the teaching prompt is not duplicated outside the package',
   )
+
+  // 发布闸门：依赖表说明「我们会发布什么」，所以它必须等于可发布平台集合。
+  const platforms = JSON.parse(readFileSync(join(packageRoot, 'platforms.config.json'), 'utf8'))
+  const publishable = platforms.targets
+    .filter((target) => target.publish !== false)
+    .map((target) => `${platforms.scope}/core-${target.platform}-${target.arch}`)
+    .sort()
+  const declared = Object.keys(manifest.optionalDependencies ?? {}).sort()
+  check(
+    JSON.stringify(declared) === JSON.stringify(publishable),
+    'optionalDependencies lists exactly the publishable platforms',
+    `declared ${declared.join(', ')} / publishable ${publishable.join(', ')}`,
+  )
+  for (const name of declared) {
+    check(
+      manifest.optionalDependencies[name] === manifest.version,
+      `${name} is pinned to ${manifest.version} (no range, no drift)`,
+      `declares ${manifest.optionalDependencies[name]}`,
+    )
+  }
+  check(
+    manifest.publishConfig?.access === 'public',
+    'publishConfig.access is public (a scoped publish without it lands private)',
+  )
+  check(
+    manifest.publishConfig?.tag === (manifest.version.includes('-') ? 'next' : 'latest'),
+    `publishConfig.tag matches the version channel (${manifest.version})`,
+    `tag is ${String(manifest.publishConfig?.tag)}`,
+  )
+
 
   // ── 2. npm pack --dry-run：文件白名单 ───────────────────────────────────
 
@@ -110,7 +151,9 @@ try {
       'package.json',
       'README.md',
       'LICENSE',
+      'THIRD-PARTY-NOTICES.md',
       'cordis.patch.yml',
+      'platforms.config.json',
       'src/index.js',
       'src/core-client.mjs',
       'policies/tutor-prompt.md',

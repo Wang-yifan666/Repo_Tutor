@@ -22,6 +22,9 @@ import { fileURLToPath } from 'node:url'
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const installer = join(packageRoot, 'scripts', 'install-preset.mjs')
 
+// 版本号从 manifest 读，不写死：写死的断言会在每次改版本时变成假失败。
+const PACKAGE_VERSION = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version
+
 let failures = 0
 function check(condition, message, detail) {
   if (condition) {
@@ -71,7 +74,7 @@ try {
     existsSync(join(presetDir, 'plugin', 'policies', 'tutor-prompt.md')),
     'install vendors the teaching prompt',
   )
-  check(manifest().version === '0.1.0', 'manifest records the package version')
+  check(manifest().version === PACKAGE_VERSION, 'manifest records the package version')
   const composition = () => readFileSync(join(presetDir, 'agent.cordis.yml'), 'utf8')
   check(composition().includes("name: './plugin/src/index.js'"), 'row uses a preset-relative specifier')
   check(!/[A-Za-z]:[\\/]/.test(composition()), 'row carries no absolute drive path')
@@ -80,7 +83,7 @@ try {
   // ── 2. 重复安装（同版本，未改动）───────────────────────────────────────
   runInstaller(installer, dshHome)
   check(listBackups().length === 0, 'reinstall over an untouched install creates no backup')
-  check(manifest().version === '0.1.0', 'reinstall keeps the same version')
+  check(manifest().version === PACKAGE_VERSION, 'reinstall keeps the same version')
 
   // ── 3. 用户改动后再装 ───────────────────────────────────────────────────
   const userNote = '\n# 我自己的改动：第 2 单元改成先讲渲染\n'
@@ -123,13 +126,13 @@ try {
     'a file added in the new version is vendored',
   )
 
-  // 再装回 0.1.0：新版本多出来的文件要被清掉（不残留失效路径）
+  // 再装回原版本：新版本多出来的文件要被清掉（不残留失效路径）
   runInstaller(installer, dshHome)
   check(
     !existsSync(join(presetDir, 'plugin', 'src', 'extra-0-1-1.mjs')),
     'downgrade removes a file the older version does not ship',
   )
-  check(manifest().version === '0.1.0', 'downgrade records the older version')
+  check(manifest().version === PACKAGE_VERSION, 'downgrade records the older version')
 
   // ── 5. 卸载（有本地改动时先保留）──────────────────────────────────────
   writeFileSync(join(presetDir, 'agent.cordis.yml'), composition() + userNote)
@@ -160,12 +163,12 @@ try {
   check(refused !== undefined, 'install refuses to overwrite a foreign preset directory')
   check((refused ?? '').includes('--force'), 'the refusal tells the user about --force')
   runInstaller(installer, dshHome, ['--force'])
-  check(manifest().version === '0.1.0', '--force installs over a foreign directory')
+  check(manifest().version === PACKAGE_VERSION, '--force installs over a foreign directory')
 
   // ── 8. 状态查询 ────────────────────────────────────────────────────────
   const status = runInstaller(installer, dshHome, ['--status'])
   check(status.includes('installed'), '--status reports the installed state')
-  check(status.includes('0.1.0'), '--status reports the version')
+  check(status.includes(PACKAGE_VERSION), '--status reports the version')
 } finally {
   rmSync(work, { recursive: true, force: true })
 }

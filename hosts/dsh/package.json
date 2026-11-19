@@ -1,6 +1,6 @@
 {
   "name": "repo-tutor-dsh",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "description": "Interactive repository tutor for DSH: a C++ teaching state machine (Learning Units, evidence budget, frozen question snapshots) behind tutor tools and a Tutor agent mode.",
   "type": "module",
   "main": "src/index.js",
@@ -12,7 +12,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "repo-tutor-dsh": "./scripts/install-preset.mjs"
+    "repo-tutor-dsh": "scripts/install-preset.mjs"
   },
   "files": [
     "src",
@@ -20,8 +20,10 @@
     "preset",
     "scripts",
     "cordis.patch.yml",
+    "platforms.config.json",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "keywords": [
     "dsh",
@@ -49,16 +51,20 @@
   },
   "scripts": {
     "verify": "node scripts/verify-package.mjs",
-    "platforms": "node scripts/make-platform-packages.mjs"
+    "platforms": "node scripts/make-platform-packages.mjs",
+    "check": "node scripts/release-check.mjs"
   },
   "repoTutor": {
     "protocolVersion": "0.1",
     "platformsConfig": "platforms.config.json"
   },
   "optionalDependencies": {
-    "@repo-tutor/core-win32-x64": "0.1.0",
-    "@repo-tutor/core-linux-x64": "0.1.0",
-    "@repo-tutor/core-darwin-arm64": "0.1.0"
+    "@repo-tutor/core-win32-x64": "0.1.0-rc.1",
+    "@repo-tutor/core-linux-x64": "0.1.0-rc.1"
+  },
+  "publishConfig": {
+    "tag": "next",
+    "access": "public"
   },
   "dsh": {
     "bundle": {

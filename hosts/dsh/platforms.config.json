@@ -1,5 +1,6 @@
 {
   "//": "发布配置：scope 改名只改这里（或用 REPO_TUTOR_NPM_SCOPE 覆盖）。版本永远跟主包走。",
+  "//publish": "publish=false 的平台仍然可以构建和跑测试，但不会进 optionalDependencies，也不接受出包。",
   "scope": "@repo-tutor",
   "protocolVersion": "0.1",
   "targets": [
@@ -7,20 +8,25 @@
       "platform": "win32",
       "arch": "x64",
       "bin": "repo-tutor-core.exe",
-      "buildAction": "windows"
+      "buildAction": "windows",
+      "publish": true,
+      "verifiedOn": "Windows 11 x64 + DSH 0.1.6-alpha.1（Preset-only 完整教学回合）"
     },
     {
       "platform": "linux",
       "arch": "x64",
       "bin": "repo-tutor-core",
-      "buildAction": "linux-glibc"
+      "buildAction": "linux-glibc",
+      "publish": true,
+      "verifiedOn": "WSL2 Ubuntu, glibc 2.39（ctest + client-smoke + 平台包），未在 CI 原生 runner 上跑过"
     },
     {
       "platform": "darwin",
       "arch": "arm64",
       "bin": "repo-tutor-core",
       "buildAction": "macos-arm64",
-      "unverified": "只有在本机 macOS runner 上真跑过才能去掉这个标记"
+      "publish": false,
+      "unverified": "只有在本机 macOS runner 上真跑过才能把 publish 改成 true"
     }
   ]
 }

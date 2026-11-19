@@ -31,6 +31,14 @@ case "$reply" in
   *) bad "unexpected negotiate reply: $reply" ;;
 esac
 
+# 发布时真正要写进 README 的是「最低 glibc」，不是构建机上的 glibc。
+# 符号版本号来自二进制自己问了哪些符号，换台更老的机器编译，这个数才可能变。
+if command -v objdump > /dev/null 2>&1; then
+  glibc_floor=$(objdump -T "$EXE" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1)
+  cxx_floor=$(objdump -T "$EXE" 2>/dev/null | grep -o 'GLIBCXX_[0-9.]*' | sed 's/GLIBCXX_//' | sort -uV | tail -1)
+  ok "requires glibc >= ${glibc_floor:-unknown}, libstdc++ symbols <= ${cxx_floor:-none (statically linked)}"
+fi
+
 # 完整协议走查（和 Windows 上同一条链）
 if node hosts/dsh/test/client-smoke.mjs "$EXE" > /tmp/client.log 2>&1; then
   ok "client-smoke passes against the Linux binary"

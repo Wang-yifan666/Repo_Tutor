@@ -9,6 +9,8 @@
 //      bundles 里去掉主包，再起一次 DSH —— 只用 preset 自带的 plugin/ + bin/ 跑一轮
 //
 // 用法：DSH_HARNESS=<dsh checkout> node hosts/dsh/test/isolated-platform.mjs [--keep]
+//
+// 只想先看一半：RT_ONLY=c 只跑 Bundle 模式，RT_ONLY=b 只跑 Preset 模式。
 
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -125,6 +127,7 @@ export const name = 'rt-probe'
 export const inject = ['agentPresets', 'agents']
 export function apply(ctx) {
   const out = process.env.RT_PROBE_OUT
+  const presetId = process.env.RT_PROBE_PRESET ?? ''
   const result = { tag: ${JSON.stringify(tag)}, steps: [] }
   const write = () => { try { writeFileSync(out, JSON.stringify(result, null, 2)) } catch {} }
   const step = (name) => { result.steps.push(name); write() }
@@ -135,12 +138,13 @@ export function apply(ctx) {
       step('listed')
       const handle = await ctx.agents.create({
         sessionId: 'rt-probe-' + Date.now(),
-        meta: { cwd: process.env.RT_PROBE_CWD, agentPreset: 'repo-tutor' },
+        // Bundle 模式故意不带 preset：它要证明的是「补丁插的那一行对普通 agent 也生效」。
+        meta: { cwd: process.env.RT_PROBE_CWD, ...(presetId === '' ? {} : { agentPreset: presetId }) },
         agentOptions: { provider: 'deepseek-official', model: 'deepseek-flash' },
       })
       const agent = handle.agent
       // agents.create 不会自己组合 preset；UI 由 agent factory 代劳，程序化路径要显式 mount。
-      await ctx.agentPresets.mount(agent.ctx, 'repo-tutor')
+      if (presetId !== '') await ctx.agentPresets.mount(agent.ctx, presetId)
       result.composedPreset = ctx.agentPresets.composedPreset(agent.ctx) ?? null
       result.agentTools = {
         tutorStatus: agent.ctx.tools.get('tutor_status') !== undefined,
@@ -194,6 +198,7 @@ async function bootAndRun({ label, profile, overlay, expectPreset }) {
         RT_PROBE_OUT: probeOut,
         RT_PROBE_CWD: workspace,
         RT_PROBE_PROMPT: prompt,
+        RT_PROBE_PRESET: expectPreset ? 'repo-tutor' : '',
         REPO_TUTOR_CORE: '',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -254,18 +259,28 @@ try {
   const bundleEmpty = join(work, 'empty-overlay.yml')
   writeFileSync(bundleEmpty, '[]\n')
   const skipBundle = process.env.RT_ONLY === 'b'
-  const bundle = skipBundle ? { result: { toolCalls: ['tutor_status', 'tutor_evidence_read', 'tutor_complete_unit'] }, log: '(skipped)' } : await bootAndRun({ label: 'bundle', profile: 'tutor-e2e', overlay: bundleEmpty })
+  const bundle = skipBundle ? { result: { toolCalls: ['tutor_status', 'tutor_evidence_read', 'tutor_complete_unit'] }, log: '(skipped)' } : await bootAndRun({ label: 'bundle', profile: 'tutor-e2e', overlay: bundleEmpty, expectPreset: false })
   check(bundle.result !== undefined, 'C: the probe answered in bundle mode', bundle.log.slice(-500))
+  check(
+    bundle.result?.composedPreset === null || bundle.result?.composedPreset === undefined,
+    'C: bundle mode ran on a plain agent, so the tools can only come from the bundle row',
+    JSON.stringify(bundle.result?.composedPreset ?? null),
+  )
+  // 模型没调工具时，光看 [] 分不清「工具没挂上」和「模型没调」，所以把探针的完整结果打出来。
+  const bundleDetail = () => JSON.stringify(bundle.result ?? {}, null, 2)
   check(
     (bundle.result?.toolCalls ?? []).includes('tutor_status'),
     'C: the model called tutor_status with the Core resolved from the platform package',
-    JSON.stringify(bundle.result?.toolCalls ?? []),
+    bundleDetail(),
   )
+  // Bundle 模式用的是普通 agent（没有导师模式的 alwaysOn 和教学规则），
+  // 所以这里只验证「工具真能打到 Core」，不验证它肯把整个单元教完 ——
+  // 那一轮是 B 的事。要求 C 也走完六步，测的是模型心情，不是接线。
   check(
-    (bundle.result?.toolCalls ?? []).includes('tutor_evidence_read') &&
-      (bundle.result?.toolCalls ?? []).includes('tutor_complete_unit'),
-    'C: the full unit loop ran in bundle mode',
-    JSON.stringify(bundle.result?.toolCalls ?? []),
+    (bundle.result?.toolCalls ?? []).includes('tutor_scan_repository') &&
+      (bundle.result?.errorEvents ?? []).length === 0,
+    'C: more than one tutor tool reached the Core and no agent error was raised',
+    bundleDetail(),
   )
 
   // ── 4. 装导师模式（默认把平台 Core 复制进 preset/bin）────────────────
@@ -292,21 +307,25 @@ try {
   delete withoutBundle.dependencies['repo-tutor-dsh']
   writeFileSync(profileManifestPath, `${JSON.stringify(withoutBundle, null, 2)}\n`)
 
-  const preset = await bootAndRun({ label: 'preset', profile: 'tutor-e2e', overlay: bundleEmpty })
-  check(preset.result !== undefined, 'B: the probe answered in preset mode after the cache was deleted', preset.log.slice(-500))
-  console.log('      B tool sequence: ' + JSON.stringify(preset.result?.toolCalls ?? []))
-  console.log('      B session end  : ' + String(preset.result?.idle))
-  if ((preset.result?.agentTools?.tutorStatus ?? false) === false) {
-    console.log('---- preset boot log (tail) ----')
-    console.log(String(preset.log).split('\n').slice(-40).join('\n'))
+  if (process.env.RT_ONLY === 'c') {
+    console.log('      (RT_ONLY=c: preset-only half skipped)')
+  } else {
+    const preset = await bootAndRun({ label: 'preset', profile: 'tutor-e2e', overlay: bundleEmpty, expectPreset: true })
+    check(preset.result !== undefined, 'B: the probe answered in preset mode after the cache was deleted', preset.log.slice(-500))
+    console.log('      B tool sequence: ' + JSON.stringify(preset.result?.toolCalls ?? []))
+    console.log('      B session end  : ' + String(preset.result?.idle))
+    if ((preset.result?.agentTools?.tutorStatus ?? false) === false) {
+      console.log('---- preset boot log (tail) ----')
+      console.log(String(preset.log).split('\n').slice(-40).join('\n'))
+    }
+    const expected = ['tutor_status', 'tutor_scan_repository', 'tutor_propose_learning_map', 'tutor_open_unit', 'tutor_evidence_read', 'tutor_complete_unit']
+    const seenCalls = preset.result?.toolCalls ?? []
+    check(
+      expected.every((name) => seenCalls.includes(name)),
+      'B: the model called all six tutor tools through the vendored plugin + vendored Core',
+      JSON.stringify(preset.result ?? {}, null, 2),
+    )
   }
-  const expected = ['tutor_status', 'tutor_scan_repository', 'tutor_propose_learning_map', 'tutor_open_unit', 'tutor_evidence_read', 'tutor_complete_unit']
-  const seenCalls = preset.result?.toolCalls ?? []
-  check(
-    expected.every((name) => seenCalls.includes(name)),
-    'B: the model called all six tutor tools through the vendored plugin + vendored Core',
-    JSON.stringify(preset.result ?? {}, null, 2),
-  )
 } catch (error) {
   check(false, `isolated platform test crashed: ${error.message}`)
 } finally {

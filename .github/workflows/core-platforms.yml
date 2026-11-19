@@ -4,8 +4,13 @@
 # 算 SHA-256 → 生成平台包 → 上传产物。主包由 release job 统一 pack，
 # 版本一致性由 hosts/dsh/scripts/make-platform-packages.mjs 断言。
 #
-# 本文件没有在 GitHub 上真实跑过（这次约束是不推送）；本地等价流程见
-# hosts/dsh/test/linux-native.sh（Linux / WSL）和 hosts/dsh/test/platform-core.mjs（Windows）。
+# 本文件到 0.1.0-rc.1 为止一次都没有在 GitHub 上真实跑过（这几轮的约束都是不推送），
+# 所以「CI 通过」目前没有任何证据，只有本地等价流程：
+# hosts/dsh/test/linux-native.sh（WSL Ubuntu）和 hosts/dsh/test/platform-core.mjs（Windows）。
+#
+# matrix 里的 publish=false 意思是「这个平台还没在原生 runner 上验证过」：照常构建、
+# 照常跑测试，但不出平台包、不上传产物。darwin-arm64 就是这么标着的 —— 它一旦跑通并
+# 被人看过，才能把 platforms.config.json 里的 publish 改成 true。
 
 name: core-platforms
 
@@ -28,15 +33,19 @@ jobs:
           - os: windows-2022
             platform: win32
             arch: x64
+            publish: true
             exe: build/release/apps/repo-tutor-core/Release/repo-tutor-core.exe
           # ubuntu-22.04 是 glibc 2.35；用更老的 runner 才能覆盖更宽的发行版。
           - os: ubuntu-22.04
             platform: linux
             arch: x64
+            publish: true
             exe: build/release/apps/repo-tutor-core/repo-tutor-core
+          # 构建照跑，产物不发：没有人在 macOS 上真跑过 DSH + 导师模式。
           - os: macos-14
             platform: darwin
             arch: arm64
+            publish: false
             exe: build/release/apps/repo-tutor-core/repo-tutor-core
     runs-on: ${{ matrix.os }}
 
@@ -67,6 +76,7 @@ jobs:
           fi
 
       - name: Generate platform package (checks deps, sha256, protocol, exec bit)
+        if: matrix.publish
         run: node hosts/dsh/scripts/make-platform-packages.mjs --platform ${{ matrix.platform }}-${{ matrix.arch }} --core ${{ matrix.exe }}
 
       - name: Verify the binary answers the protocol
@@ -77,10 +87,12 @@ jobs:
           grep -q '"protocolVersion":"0.1"' /tmp/negotiate.txt
 
       - name: Pack platform package
+        if: matrix.publish
         working-directory: hosts/dsh/dist/platforms/${{ matrix.platform }}-${{ matrix.arch }}
         run: npm pack --pack-destination ../../../../dist
 
       - uses: actions/upload-artifact@v4
+        if: matrix.publish
         with:
           name: core-${{ matrix.platform }}-${{ matrix.arch }}
           path: hosts/dsh/dist/*.tgz
@@ -119,6 +131,12 @@ jobs:
       - name: Pack the main package
         working-directory: hosts/dsh
         run: npm pack --dry-run
+
+      # 发布前把「会被发出去的东西」整套查一遍：版本一致性、依赖表、dist-tag、
+      # tarball 清单、敏感文件、SHA-256。dry-run 也在这里跑，CI 里不联网发布。
+      - name: Release check
+        working-directory: hosts/dsh
+        run: node scripts/release-check.mjs
 
       # 发布动作留给人来做：先确认 scope 可用性、LICENSE，再 npm publish。
       - name: Publish hint

@@ -44,6 +44,8 @@ function fail(message) {
 function syncDependencies() {
   const optional = {}
   for (const target of config.targets) {
+    // publish=false 的平台只是构建目标，不进依赖：依赖表就是「我们会发布什么」。
+    if (target.publish === false) continue
     // 精确版本：平台包和主包必须同号，协议才保证一致。
     optional[packageNameFor(target)] = version
   }
@@ -67,6 +69,16 @@ if (argv.includes('--sync')) {
 const platformArg = flag('--platform') ?? `${process.platform}-${process.arch}`
 const target = config.targets.find((entry) => suffixFor(entry) === platformArg)
 if (target === undefined) fail(`platform ${platformArg} is not in platforms.config.json`)
+
+// 未验证的平台不出包：出包就该发布，而 publish=false 说的是「我们还不敢发布它」。
+if (target.publish === false && !argv.includes('--allow-unpublished')) {
+  fail(
+    `${platformArg} is marked publish=false in platforms.config.json` +
+      (target.unverified === undefined ? '' : ` (${target.unverified})`) +
+      '\n  It can still be built and tested, but no npm package is derived from it until it is\n' +
+      '  verified on a native runner. Pass --allow-unpublished to produce a local-only package.',
+  )
+}
 
 const coreArg = flag('--core')
 if (coreArg === undefined) fail('--core <path> is required (the executable built for this platform)')
@@ -166,6 +178,10 @@ if (target.platform !== 'win32') chmodSync(join(outDir, binRel), 0o755)
 const sha = createHash('sha256').update(readFileSync(join(outDir, binRel))).digest('hex')
 writeFileSync(join(outDir, 'checksums.txt'), `${sha}  ${binRel.replaceAll('\\', '/')}\n`)
 
+// 平台包也单独发布，所以它得自己带上许可证与第三方声明 —— npm 不会替你跨包继承。
+copyFileSync(join(packageRoot, 'LICENSE'), join(outDir, 'LICENSE'))
+copyFileSync(join(packageRoot, 'THIRD-PARTY-NOTICES.md'), join(outDir, 'THIRD-PARTY-NOTICES.md'))
+
 const platformManifest = {
   name: packageNameFor(target),
   version,
@@ -174,10 +190,15 @@ const platformManifest = {
   repository: manifest.repository,
   os: [target.platform],
   cpu: [target.arch],
-  files: ['bin', 'checksums.txt'],
+  files: ['bin', 'checksums.txt', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   repoTutor: {
     core: binRel.replaceAll('\\', '/'),
     protocolVersion,
+  },
+  // 平台包是 scope 包，没有 access: public 会被发成私有；tag 由版本推导，避免 RC 落到 latest。
+  publishConfig: {
+    access: 'public',
+    tag: version.includes('-') ? 'next' : 'latest',
   },
 }
 writeFileSync(join(outDir, 'package.json'), `${JSON.stringify(platformManifest, null, 2)}\n`)
