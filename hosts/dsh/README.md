@@ -29,7 +29,26 @@ node hosts/dsh/test/client-smoke.mjs "<repo>/build/dev-mingw/apps/repo-tutor-cor
 ## 当前能力
 
 - 工具：`tutor_status`、`tutor_open_unit`、`tutor_evidence_read`
-- 命令：`/tutor` 显示当前会话状态
+- 命令：`/tutor` 显示当前会话状态（web profile；headless 没有 commands，自动跳过）
+
+## 模型驱动验证（已跑通）
+
+headless profile 可以直接验证"模型 → 工具 → Core"：
+
+```sh
+$env:REPO_TUTOR_CORE = "<repo>/build/dev-mingw/apps/repo-tutor-core/repo-tutor-core.exe"
+pnpm dsh --profile headless --patch "<repo>/hosts/dsh/overlay.local.yml" \
+  "Call the tutor_status tool and print its exact raw output."
+```
+
+模型会调用 `tutor_status`，拿回 Core 的真实状态：
+
+```json
+{"sessionId":"session-1","coverage":"core_path","currentDepth":"d2_working","units":[],"currentUnitId":null}
+```
+
+commands 是可选能力：headless 没有它，插件用 `ctx.get('commands')` 探测而不是写进
+`inject`，所以同一份插件在 headless 和 web 下都能加载。
 
 ## 还没做：Conversation Node
 

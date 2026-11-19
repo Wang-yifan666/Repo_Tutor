@@ -5,7 +5,7 @@
 import { CoreClient } from './core-client.mjs'
 
 export const name = 'repo-tutor-dsh'
-export const inject = ['tools', 'commands']
+export const inject = ['tools']
 
 const textBlock = (value) => [{ type: 'text', text: JSON.stringify(value) }]
 
@@ -101,15 +101,18 @@ export function apply(ctx) {
   })
 
   // 最小可替代 UI surface：在对话里用 /tutor 显示 core 状态。
-  // 完整的 Conversation Node 受限于 out-of-tree client bundle 构建和
-  // session event 的 ignorable 机制，见 hosts/dsh/README.md。
-  ctx.commands.register({
-    name: 'tutor',
-    description: 'Show the current Repo Tutor session state.',
-    async handler() {
-      await ensureSession()
-      const state = await client.request('session.get')
-      return { kind: 'success', text: JSON.stringify(state, null, 2) }
-    },
-  })
+  // commands 是可选能力（headless profile 没有它），所以用 ctx.get 探测，
+  // 不能写进 inject。
+  const commands = ctx.get('commands')
+  if (commands !== undefined) {
+    commands.register({
+      name: 'tutor',
+      description: 'Show the current Repo Tutor session state.',
+      async handler() {
+        await ensureSession()
+        const state = await client.request('session.get')
+        return { kind: 'success', text: JSON.stringify(state, null, 2) }
+      },
+    })
+  }
 }
