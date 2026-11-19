@@ -43,6 +43,9 @@ run(process.execPath, [join(root, 'hosts', 'dsh', 'test', 'plugin-wiring.mjs'), 
 //     这一步只在仓库里有意义（包里不带 test/），所以放在 repo 的 smoke 里跑。
 run(process.execPath, [join(root, 'hosts', 'dsh', 'scripts', 'verify-package.mjs'), '--core', exePath])
 
+// 3.7 安装器生命周期：重复安装、用户改动备份、升级清陈旧文件、卸载保留本地改动。
+run(process.execPath, [join(root, 'hosts', 'dsh', 'test', 'installer-lifecycle.mjs')])
+
 // 4. 模型驱动验证是可选的：要 DSH checkout，还会真的调模型。
 if (process.argv.includes('--model')) {
   if (process.env.DSH_HARNESS === undefined || process.env.DSH_HARNESS === '') {

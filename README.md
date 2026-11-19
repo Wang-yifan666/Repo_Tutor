@@ -82,9 +82,18 @@ dsh plugin --profile <name> add ./repo-tutor-dsh-0.1.0.tgz
 ```
 
 Point `REPO_TUTOR_CORE` at the executable afterwards — `repo-tutor-core` is not
-shipped with the package yet. The Tutor mode installs through the package's
-`repo-tutor-install-preset` bin, which vendors the plugin into the preset directory
-so it never needs a source checkout on the machine.
+shipped with the package yet. The Tutor mode installs through the package's bin
+(the bin is named `repo-tutor-dsh`, same as the package, so `npx` resolves it):
+
+```sh
+npx repo-tutor-dsh --core /path/to/repo-tutor-core   # installed locally
+npx --yes --package repo-tutor-dsh repo-tutor-dsh    # one-off, not installed
+npx repo-tutor-dsh --status | --uninstall | --version | --help
+```
+
+It vendors the plugin into the preset directory, so it never needs a source
+checkout on the machine. Re-running it upgrades in place, backs up anything you
+edited locally, and removes files the previous version left behind.
 
 ## Tests
 

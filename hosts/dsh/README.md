@@ -47,8 +47,11 @@ DSH 自带四个模式（标准 / PTC / 极简 / 创造），都从"编码 Agent
 也是最窄的一个：**只教，不替你改**。选它，整段会话就是教学会话。
 
 ```sh
-repo-tutor-install-preset                        # Core 走 REPO_TUTOR_CORE
-repo-tutor-install-preset --core /path/to/core   # 把路径写进 preset
+# 包已经装进某个项目/profile（node_modules 里有 repo-tutor-dsh）：
+npx repo-tutor-dsh --core /path/to/repo-tutor-core
+
+# 没装在本地，想直接跑一次：
+npx --yes --package repo-tutor-dsh repo-tutor-dsh --core /path/to/repo-tutor-core
 ```
 
 装进 `$DSH_HOME/.agent-presets/repo-tutor/`，重启 DSH 后在模式选择器里选「导师模式」。
@@ -57,6 +60,24 @@ repo-tutor-install-preset --core /path/to/core   # 把路径写进 preset
 `./plugin/src/index.js`。**故意不用包名**：DSH 解析 preset 行里的包名时，基准是
 已安装的 harness，不是用户的 profile，装进 profile 的包它看不见；`./` 开头的名字
 按 preset 自己的目录解析（Include 会改写 baseUrl），从 checkout 跑和从 npm 包跑都一样。
+
+安装器的几个开关：
+
+```sh
+npx repo-tutor-dsh --status      # 装了什么版本、装在哪、哪些文件被本地改过
+npx repo-tutor-dsh --uninstall    # 卸载；本地改过的文件会先备份
+npx repo-tutor-dsh --version
+npx repo-tutor-dsh --help
+```
+
+**重复安装 / 升级 / 卸载**：安装器会写一份 `installed.json`（版本、Core 路径、每个受管
+文件的 sha256）。再次安装时只覆盖「内容还是我们写的那份」的文件；内容变了就是本地改过的，
+覆盖前整体备份到 `backup-<时间戳>/` 并在输出里点名。升级会清掉上一版有、这一版没有的
+文件，不残留失效路径。卸载只删原样的受管文件，改过的会移到 `kept-<时间戳>/` 保留。
+
+**跨平台**：bin 文件带 `#!/usr/bin/env node`；npm 在 POSIX 上给 bin 加执行位、在 Windows
+上生成 `.cmd`/`.ps1` shim，所以四种调用方式都验过（见下面的"验证"）。Windows 上路径里的
+反斜杠会统一成 `/` 写进 YAML。
 
 **改名不用重启，改行为要重启。** roster 每次调用都重读目录，所以显示名、说明立刻生效；
 但 preset 一旦被某个会话挂载过，这份组合就钉在那个进程里直到进程退出
@@ -107,7 +128,7 @@ src/index.js                插件本体（工具 / prompt 小节 / /tutor 命�
 src/core-client.mjs         spawn core + 逐行 JSON-RPC
 policies/tutor-prompt.md    教学 prompt 正文
 preset/                     导师模式的组合模板
-scripts/install-preset.mjs  导师模式安装器（bin: repo-tutor-install-preset）
+scripts/install-preset.mjs  导师模式安装器（bin: repo-tutor-dsh）
 scripts/verify-package.mjs  发布前自检（npm pack + 解包 + 接线断言）
 cordis.patch.yml            bundle 层：插一行插件
 ```
@@ -120,8 +141,15 @@ cordis.patch.yml            bundle 层：插一行插件
 npm run verify
 ```
 
-完整验证（协议走查、插件接线、模型闭环）在仓库里跑：
-<https://github.com/Wang-yifan666/Repo_Tutor#readme>
+仓库里还有三个更重的验收（都在临时目录里跑，不碰真实 `$DSH_HOME`）：
+
+```sh
+node hosts/dsh/test/installer-lifecycle.mjs   # 重复安装 / 用户改动 / 升级 / 卸载
+node hosts/dsh/test/isolated-session.mjs      # 隔离 DSH_HOME：tarball → profile → preset → 真实教学一轮
+node hosts/dsh/test/preset-root-poc.mjs       # PoC：Bundle Patch 声明 preset root 的可行性
+```
+
+前两个需要 `DSH_HARNESS`（第二个还要凭据和模型），缺条件时打印 `SKIPPED` 并以 0 退出。
 
 ## 还没做：Conversation Node
 

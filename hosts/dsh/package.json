@@ -11,7 +11,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "repo-tutor-install-preset": "./scripts/install-preset.mjs"
+    "repo-tutor-dsh": "./scripts/install-preset.mjs"
   },
   "files": [
     "src",

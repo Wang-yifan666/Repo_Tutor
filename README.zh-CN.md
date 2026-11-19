@@ -82,8 +82,17 @@ dsh plugin --profile <name> add ./repo-tutor-dsh-0.1.0.tgz
 ```
 
 装完记得给 `REPO_TUTOR_CORE`——这一阶段 `repo-tutor-core` 不随包分发。
-导师模式用 `repo-tutor-install-preset`（包里的 bin），它会把插件复制进 preset 目录，
-不依赖你本地有源码仓库。
+
+导师模式用包里的 bin 装（bin 名和包名一致，`npx` 才解析得到）：
+
+```sh
+npx repo-tutor-dsh --core /path/to/repo-tutor-core   # 已装进本地
+npx --yes --package repo-tutor-dsh repo-tutor-dsh    # 没装，跑一次
+npx repo-tutor-dsh --status | --uninstall | --version | --help
+```
+
+它会把插件复制进 preset 目录，不依赖你本地有源码仓库；重复安装就地升级，
+本地改过的文件先备份，上一版有、这一版没有的文件会被清掉。
 
 ## 测试
 
