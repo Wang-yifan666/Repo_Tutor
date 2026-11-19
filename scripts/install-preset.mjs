@@ -45,4 +45,8 @@ for (const name of ['preset.yml', 'agent.cordis.yml']) {
 }
 
 console.log(`\npreset "${id}" installed into ${targetDir}`)
-console.log('新开一个会话，在模式选择器里选它。改完模板重跑本脚本即可。')
+console.log(
+  '显示名和说明立刻生效（roster 每次重读目录），但**行为要重启 DSH 进程**：\n' +
+    'preset 一旦被某个会话挂载过，这份组合就钉在那个进程里，直到进程退出。\n' +
+    '所以改完模板或插件代码，重启 DSH（关掉 dsh web 再开）才会用上新版本。',
+)

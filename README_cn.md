@@ -11,7 +11,7 @@ Recon → Repository Map → Learning Map → Learning Unit
       → Guided Reading → 可选的检查 → 评估 → 下一个单元
 ```
 
-一个单元只服务一个认知目标。题目是可选的验证手段，不是必经环节。
+一个单元只服务一个认知目标。协议上题目不是必经状态（Core 不强制），但教学上默认每个单元做一次检查——讲完不代表讲进去了。
 
 ## 为什么值得做
 
@@ -29,7 +29,7 @@ DSH 自带四个模式（标准 / PTC / 极简 / 创造），都从编码 Agent 
 node scripts/install-preset.mjs
 ```
 
-装完新开会话，在模式选择器里选「导师模式」。它砍掉了 `read` / `grep` / `shell` / `web` 这些旁路，看代码只剩 `tutor_evidence_read` 一条路，证据预算和冻结快照才拦得住。
+装完新开会话，在模式选择器里选「导师模式」。改完 preset 或插件代码要重启 DSH 进程——组合一旦被挂载就钉在进程里了。它砍掉了 `read` / `grep` / `shell` / `web` 这些旁路，看代码只剩 `tutor_evidence_read` 一条路，证据预算和冻结快照才拦得住。
 
 ## 约束在 Core 里，不在提示词里
 

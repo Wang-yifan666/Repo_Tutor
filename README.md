@@ -11,7 +11,7 @@ Recon → Repository Map → Learning Map → Learning Unit
       → Guided Reading → optional check → evaluation → next unit
 ```
 
-One unit serves exactly one cognitive goal. Questions are an optional verification step, not a required stage.
+One unit serves exactly one cognitive goal. The protocol does not force a question into existence, but teaching defaults to one check per unit — having explained something is not the same as it having landed.
 
 ## Why bother
 
@@ -29,7 +29,7 @@ Pick it and the whole session is a tutoring session — the model never has to d
 node scripts/install-preset.mjs
 ```
 
-Start a new session and choose 「导师模式」 in the mode selector. The mode drops `read` / `grep` / `shell` / `web`, leaving `tutor_evidence_read` as the only way to look at code — which is what makes the evidence budget and the frozen question snapshot mean anything.
+Start a new session and choose 「导师模式」 in the mode selector. Editing the preset or the plugin afterwards needs a DSH restart — a composed preset is pinned into the process for its lifetime. The mode drops `read` / `grep` / `shell` / `web`, leaving `tutor_evidence_read` as the only way to look at code, which is what makes the evidence budget and the frozen question snapshot mean anything.
 
 ## The constraints live in the Core, not in a prompt
 

@@ -138,7 +138,9 @@ The loop:
 
 **Teach before you mark it done.** \`tutor_complete_unit\` closes a unit the learner has already seen. Never call it in the same turn as your evidence reads, and never before the lesson has actually reached the user. Then stop and let them respond — do not roll straight into the next unit unless they asked you to keep going.
 
-**Ask with the question card when it exists.** Use \`ask_user_question\` to confirm the learning map or the starting point, and to pose a comprehension check — that way the learner gets a real input box instead of a question buried at the end of prose. Pass their answer verbatim to \`tutor_answer_submit\`, then judge it with \`tutor_evaluation_record\` against the frozen snapshot it returns. If that tool is not available, ask in your message and wait.
+**One check per unit, by default.** A unit is not finished until you know whether the mental model actually landed. The default unit ending is: teach → \`tutor_question_create\` → pose it with \`ask_user_question\` → learner answers → \`tutor_answer_submit\` → \`tutor_evaluation_record\` → \`tutor_complete_unit\`. The Core does not force a question into existence — skip the check when the learner says they already know this part, or asks you to keep going — but "I taught it, so it landed" is not a reason to skip. If you finish a unit having never checked anything, you have no idea whether the lesson worked.
+
+**Ask with the question card when it exists.** Use \`ask_user_question\` for both jobs: confirming the learning map or the starting point, and posing the comprehension check above — that way the learner gets a real input box instead of a question buried at the end of prose. Never stack several questions into one card; one question per card, ask the next one when the answer comes back. If that tool is not available, ask in your message and wait.
 
 **Evidence goes through the Core.** \`tutor_evidence_read\` is the only way to look at repository content for teaching: it is what the Evidence Budget, the frozen question snapshot and the review trail are built on. Do not use the read, glob, grep or shell tools for repository contents — for orientation you have the map from \`tutor_scan_repository\`. Every read needs a rationale naming the cognitive goal it serves.
 
@@ -183,44 +185,52 @@ const GLOBAL_TOOL_KEEP = new Set(['ask_user_question'])
 const RESERVED_TOOL_NAMES = new Set(['run_code'])
 
 // 只留这个 preset 自己注册的工具：把宿主里全局注册的（用户装的 CAD 之类的）屏蔽掉。
-// 屏蔽失败不致命——导师照样能教，只是工具面松一点，所以只记日志不上抛。
+//
+// 必须在 agent 作用域里做——DSH 的 tools.restrict() 明确拒绝非 scoped 的调用
+// （"a context-global restriction would mask every agent"）。所以挂 agent/created，
+// 在 agent 就绪后对它自己下手。再加一道保险：只对真有 tutor_status 的 agent 动手，
+// 万一 scoped 分发没按 scope 过滤，也不会牵连别的模式。
 function installGlobalToolMask(ctx) {
-  const tools = ctx.get('tools')
-  if (tools === undefined || typeof tools.restrict !== 'function' || typeof tools.schemas !== 'function') {
+  const hostTools = ctx.get('tools')
+  if (hostTools === undefined || typeof hostTools.schemas !== 'function') {
+    console.log('[repo-tutor] focusedTools: 拿不到全局工具清单，跳过全局工具屏蔽')
     return
   }
 
-  let disposeMask = null
-  const refresh = () => {
-    let names
-    try {
-      // 不带 scope 的 schemas() 就是全局视图。
-      names = tools.schemas().map((schema) => schema.name)
-    } catch (error) {
-      console.error(`[repo-tutor] 读全局工具清单失败：${error.message}`)
+  ctx.on('agent/created', (payload) => {
+    const agentCtx = payload?.agent?.ctx
+    const tools = agentCtx?.tools
+    if (tools === undefined || typeof tools.restrict !== 'function') {
+      console.log('[repo-tutor] focusedTools: 这个 agent 作用域没有 tools.restrict，跳过')
+      return
+    }
+    // 只处理导师模式的 agent。
+    if (tools.get('tutor_status') === undefined) {
       return
     }
 
-    const deny = names.filter(
-      (name) => !GLOBAL_TOOL_KEEP.has(name) && !RESERVED_TOOL_NAMES.has(name),
-    )
+    let deny
+    try {
+      // 不带 scope 的 schemas() 是全局视图。
+      deny = hostTools
+        .schemas()
+        .map((schema) => schema.name)
+        .filter((name) => !GLOBAL_TOOL_KEEP.has(name) && !RESERVED_TOOL_NAMES.has(name))
+    } catch (error) {
+      console.log(`[repo-tutor] focusedTools: 读全局工具清单失败：${error.message}`)
+      return
+    }
     if (deny.length === 0) {
       return
     }
 
     try {
-      const dispose = tools.restrict({ deny })
-      disposeMask?.()
-      disposeMask = dispose
+      tools.restrict({ deny })
+      console.log(`[repo-tutor] focusedTools: 这个会话屏蔽了 ${deny.length} 个全局工具`)
     } catch (error) {
-      console.error(`[repo-tutor] 屏蔽全局工具失败：${error.message}`)
+      console.log(`[repo-tutor] focusedTools: 屏蔽失败：${error.message}`)
     }
-  }
-
-  refresh()
-  // 全局工具可能在 apply 之后才挂上来，跟着变（Cordis 会随 fiber 一起回收这个监听）。
-  ctx.on('tools/change', refresh)
-  ctx.effect(() => () => disposeMask?.())
+  })
 }
 
 export function apply(ctx, config) {
@@ -389,7 +399,7 @@ export function apply(ctx, config) {
     method: 'unit.complete',
     params: (args) => ({ unitId: args.unitId }),
     description:
-      'Mark the current unit completed. Call it only after the lesson for this unit has actually reached the learner — not in the same turn as your evidence reads, and not before you have explained anything. Only the open unit can be completed.',
+      'Mark the current unit completed. Call it only after the lesson for this unit has actually reached the learner — not in the same turn as your evidence reads, and not before you have explained anything. If you have not checked this unit yet, run the check first (tutor_question_create → ask → tutor_answer_submit → tutor_evaluation_record) or ask the learner whether they want to skip it. Only the open unit can be completed.',
     parameters: {
       type: 'object',
       properties: {
@@ -446,7 +456,7 @@ export function apply(ctx, config) {
       evaluationCriteria: args.evaluationCriteria ?? '',
     }),
     description:
-      'Freeze a comprehension check for the open unit, then pose it to the learner (with ask_user_question when that tool exists). The evidence read so far is snapshotted at this moment; the evaluation may only use that snapshot. Write a premise that stands on its own and criteria specific enough to judge fairly. One good question beats five easy ones.',
+      'Freeze a comprehension check for the open unit, then pose it to the learner (with ask_user_question when that tool exists). This is how a unit normally ends: teach, check, judge, then complete. The evidence read so far is snapshotted at this moment; the evaluation may only use that snapshot. Write a premise that stands on its own and criteria specific enough to judge fairly. One good question beats five easy ones.',
     parameters: {
       type: 'object',
       properties: {

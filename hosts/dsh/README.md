@@ -25,8 +25,9 @@ DSH 自带四个模式（标准 / PTC / 极简 / 创造），都从"编码 Agent
 node scripts/install-preset.mjs      # 装到 $DSH_HOME/.agent-presets/repo-tutor
 ```
 
-装完不用重启：DSH 的 roster 每次调用都重读目录，新开会话时模式选择器里就有
-「导师模式」。模板在 `hosts/dsh/preset/`，改完重跑脚本即可。
+**改名不用重启，改行为要重启。** roster 每次都重读目录，所以显示名、说明立刻生效；
+但 preset 一旦被某个会话挂载过，这份组合就钉在那个进程里直到进程退出
+（DSH 的 standing mount 语义）。所以改完模板或插件代码，得把 DSH 进程重启一次。
 
 它和标准模式的差别全在那份组合文件里：
 
@@ -34,9 +35,13 @@ node scripts/install-preset.mjs      # 装到 $DSH_HOME/.agent-presets/repo-tuto
 |---|---|---|
 | 看代码 | `read` / `grep` / `glob` / shell 都能看 | **只有** `tutor_evidence_read`，走证据预算 |
 | 改代码 | 能改 | 没有任何写工具 |
-| 提问 | `ask_user_question` | 同左，且是主要交互方式 |
+| 提问 | `ask_user_question` | 同左，每个单元默认一次检查 |
 | 教学 prompt | 一小节，条件触发 | 常驻，`alwaysOn: true` |
 | 全局工具 | 全部可见 | 屏蔽（`focusedTools: true`），工具面只由 preset 决定 |
+
+`focusedTools` 的实现在 `agent/created` 上：DSH 的 `tools.restrict()` 拒绝非
+agent 作用域的调用（"a context-global restriction would mask every agent"），
+所以在每个导师 agent 就绪后对它自己下手，并且只对真有 `tutor_status` 的 agent 动手。
 
 工作原理不是改 DSH：preset 就是一个 `agent.cordis.yml`，里面只装 `persona` +
 `repo-tutor` 插件行 + `tool-ask-user` + compaction 一组。没有 fs / shell / web /
