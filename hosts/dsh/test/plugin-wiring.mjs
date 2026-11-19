@@ -102,9 +102,15 @@ for (const { deps, callback } of deferred) {
 
 check(sections.length === 1, `expected one prompt section, got ${sections.length}`)
 check(sections[0].name === 'repo-tutor', 'prompt section should be named repo-tutor')
+// section.text 是个函数：每次组装现读 policies/tutor-prompt.md。这里调一次，确认文件读得出来。
+const sectionText = typeof sections[0].text === 'function' ? sections[0].text() : sections[0].text
 check(
-  sections[0].text.includes('## Repo Tutor') && sections[0].text.includes('Topic Lock'),
+  sectionText.includes('## Repo Tutor') && sectionText.includes('Topic Lock'),
   'prompt section should carry the loop and the invariants',
+)
+check(
+  sectionText.includes('1000 Chinese characters'),
+  'prompt section should come from policies/tutor-prompt.md, not a stale in-code copy',
 )
 check(commands.length === 1, `expected the /tutor command to register, got ${commands.length}`)
 check(commands[0].name === 'tutor', '/tutor command should be named tutor')

@@ -4,7 +4,7 @@
 // 教学状态机、判分、证据预算、Question 契约全在 C++ Core 里，这里一行都不写。
 // 唯一算"内容"的东西是工具描述和阻断提示的措辞——那是给模型看的说明书。
 
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -120,38 +120,27 @@ const QUESTION_TYPES = [
 //
 // 开头那段是唯一随模式变化的部分：装进普通模式时是"用户想学时你可以教"，
 // 装进专用的导师模式（preset 里 alwaysOn）时是"这个会话就是教学会话"。
+// 正文放在 policies/tutor-prompt.md，每次组装现读——改措辞不用重启 DSH。
 const GUIDANCE_TRIGGER =
   'You are also a repository tutor. When the user wants to understand an unfamiliar codebase — get oriented, learn how a mechanism works, be able to debug or change it — run the tutor loop through the tutor_* tools. A written summary does not build a mental model; guided reading does.'
 
 const GUIDANCE_ALWAYS =
   'You are a repository tutor, and this whole session is a tutoring session. The user is the learner and the workspace is the repository under study. A request to change or fix code is still a teaching request: your job is to make the learner able to do it themselves, not to do it for them. Run everything through the tutor_* tools — a written summary does not build a mental model, guided reading does.'
 
-const GUIDANCE_BODY = `
-The loop:
+const GUIDANCE_FILE = join(repoRoot, 'policies', 'tutor-prompt.md')
 
-1. \`tutor_status\`, then \`tutor_scan_repository\`.
-2. \`tutor_propose_learning_map\` — split the repo into Learning Units, one cognitive goal each.
-3. Confirm the map and where to start with the learner BEFORE opening a unit.
-4. Per unit: \`tutor_open_unit\` → \`tutor_evidence_read\` with a rationale → teach → optionally check → \`tutor_complete_unit\`.
+// 文件读不到就退到最小规则，别让导师变成没有规则的机器人。
+const GUIDANCE_FALLBACK =
+  '\nThe loop: tutor_status → tutor_scan_repository → tutor_propose_learning_map → per unit (tutor_open_unit → tutor_evidence_read → teach → check → tutor_complete_unit). Read repository content only through tutor_evidence_read.'
 
-**Short turns, one unit at a time.** A teaching message is a conversation turn, not a chapter: a couple of short paragraphs plus the 5–25 lines of code that carry the point, and stay under roughly 350 words unless the learner asks for more. Never cover two units in one message, never dump everything you found, never open with a tour of the whole repository. Read the function or region you are about to explain, not whole files. Let the learner read and react; a unit can take several messages, so send more messages instead of writing one long one.
-
-**Teach before you mark it done.** \`tutor_complete_unit\` closes a unit the learner has already seen. Never call it in the same turn as your evidence reads, and never before the lesson has actually reached the user. Then stop and let them respond — do not roll straight into the next unit unless they asked you to keep going.
-
-**One check per unit, by default.** A unit is not finished until you know whether the mental model actually landed. The default unit ending is: teach → \`tutor_question_create\` → pose it with \`ask_user_question\` → learner answers → \`tutor_answer_submit\` → \`tutor_evaluation_record\` → \`tutor_complete_unit\`. The Core does not force a question into existence — skip the check when the learner says they already know this part, or asks you to keep going — but "I taught it, so it landed" is not a reason to skip. If you finish a unit having never checked anything, you have no idea whether the lesson worked.
-
-**Ask with the question card when it exists.** Use \`ask_user_question\` for both jobs: confirming the learning map or the starting point, and posing the comprehension check above — that way the learner gets a real input box instead of a question buried at the end of prose. Never stack several questions into one card; one question per card, ask the next one when the answer comes back. If that tool is not available, ask in your message and wait.
-
-**Evidence goes through the Core.** \`tutor_evidence_read\` is the only way to look at repository content for teaching: it is what the Evidence Budget, the frozen question snapshot and the review trail are built on. Do not use the read, glob, grep or shell tools for repository contents — for orientation you have the map from \`tutor_scan_repository\`. Every read needs a rationale naming the cognitive goal it serves.
-
-The Core enforces these, and a blocked result tells you which one you hit:
-- One Learning Unit = one cognitive goal.
-- Topic Lock: finish the open unit before opening another.
-- Every evidence read must serve the open unit's goal and carry a rationale.
-- Evaluation Before Exploration: judge an answer only with the evidence frozen at question time.
-- Depth only moves deeper (\`tutor_depth_push\`), then returns (\`tutor_depth_pop\`).
-
-Teach in the user's language. Quote the real code you read; never summarise a file you have not read through \`tutor_evidence_read\`.`
+function guidanceBody() {
+  try {
+    return `\n${readFileSync(GUIDANCE_FILE, 'utf8').trim()}\n`
+  } catch (error) {
+    console.log(`[repo-tutor] 读不到 ${GUIDANCE_FILE}（${error.message}），用最简教学规则`)
+    return GUIDANCE_FALLBACK
+  }
+}
 
 // `/tutor` 的输出：给人看的，不是给模型看的 JSON。
 function formatStatus(state) {
@@ -251,7 +240,7 @@ export function apply(ctx, config) {
   const exePath = resolveCorePath(config)
   // 专用导师模式（preset 里 alwaysOn: true）：整段会话都是教学，没有"是否触发"这一说。
   const alwaysOn = config?.alwaysOn === true
-  const guidance = `## Repo Tutor\n\n${alwaysOn ? GUIDANCE_ALWAYS : GUIDANCE_TRIGGER}${GUIDANCE_BODY}`
+  const openingLine = alwaysOn ? GUIDANCE_ALWAYS : GUIDANCE_TRIGGER
 
   // blockBypassTools：把宿主全局注册的「读文件 / 执行命令 / 上网 / 派子代理」从导师 agent
   // 上摘掉，保证证据预算在任何组合下都堵得住。
@@ -578,7 +567,8 @@ export function apply(ctx, config) {
       name: 'repo-tutor',
       order: 2450,
       interpolate: false,
-      text: guidance,
+      // 每次组装现读文件：改 policies/tutor-prompt.md 不用重启 DSH。
+      text: () => `## Repo Tutor\n\n${openingLine}${guidanceBody()}`,
     })
   })
 

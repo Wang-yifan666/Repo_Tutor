@@ -112,9 +112,16 @@ node hosts/dsh/test/client-smoke.mjs "<repo>/build/dev-mingw/apps/repo-tutor-cor
 
 ## 教学 prompt
 
-插件往 system prompt 里加一节 `repo-tutor`（order 2450），内容在 `src/index.js`
-的 `GUIDANCE` 里：什么该用 tutor 循环、循环长什么样、Core 会拦哪五条。
-服务不存在时（比如被裁剪过的 profile）自动跳过，不写进 `inject`。
+插件往 system prompt 里加一节 `repo-tutor`（order 2450），正文在
+`policies/tutor-prompt.md`：什么该用 tutor 循环、循环长什么样、Core 会拦哪五条。
+
+**改这段不用重启 DSH**：section 的 text 是个函数，每次组装现读那个文件。
+所以调教学措辞的循环是「改文件 → 下一句话就生效」，不是「改代码 → 重启 → 新会话」。
+文件读不到时退到一份最小规则并打日志，不会让导师变成没有规则的机器人。
+
+开头那句（"什么时候算教学"）仍然在 `src/index.js` 里，因为它随模式变化：
+普通模式是"用户想学时你可以教"，导师模式（`alwaysOn`）是"这个会话就是教学"。
+`systemPrompt` 服务不存在时（被裁剪过的 profile）自动跳过，不写进 `inject`。
 
 ## 验证
 
