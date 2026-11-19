@@ -1,6 +1,6 @@
 # Repo Tutor
 
-English | [中文](README_cn.md)
+English | [中文](README.zh-CN.md)
 
 A repository tutor. It walks you through an unfamiliar codebase until you can read, debug and change it on your own.
 
