@@ -34,12 +34,14 @@
 # 只注册工具和 prompt，不发布 service，所以不需要 isolate realm。
 # 插件自己从自己的位置倒推 build 目录里的 repo-tutor-core；显式覆盖时加 corePath。
 # alwaysOn: true 让 prompt 从"用户想学的时候你可以教"变成"这个会话就是教学会话"。
-# focusedTools: true 把宿主里全局注册的工具屏蔽掉，工具面只由这个 preset 决定。
+# blockBypassTools: true 把宿主全局注册的「读文件 / 执行命令 / 上网 / 派子代理」从导师
+# agent 上摘掉，证据预算在任何组合下都堵得住。它清不掉无关的全局插件（CAD 之类），
+# 那种得从 profile 里卸载，或者干脆当作噪音。
 - id: repo-tutor
   name: '__REPO_TUTOR_PLUGIN__'
   config:
     alwaysOn: true
-    focusedTools: true
+    blockBypassTools: true
 
 # 提问卡：确认学习地图、确认起点、出理解检查都靠它。
 # 没有这个，题目只能埋在正文末尾，学习者拿不到输入框。

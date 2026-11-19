@@ -178,57 +178,71 @@ function formatStatus(state) {
   return lines.join('\n')
 }
 
-// 全局工具里要留给导师模式的（提问卡最典型：它自带提问框，模式再窄也得留）。
-const GLOBAL_TOOL_KEEP = new Set(['ask_user_question'])
+// 会绕过证据预算的那批工具：读文件、执行命令、上网、派子代理。
+// 宿主可能把它们注册成全局工具（headless 就是这样，web 的共享 base 也是），
+// 那样连导师 agent 也能拿到——这时候必须在 agent 上把它们挡掉。
+const EVIDENCE_BYPASS_TOOLS = [
+  'read',
+  'read_image',
+  'write',
+  'edit',
+  'glob',
+  'grep',
+  'pwsh',
+  'bash',
+  'web_search',
+  'web_fetch',
+  'subagent',
+  'subagent_fork',
+  'send_message',
+  'workflow',
+  'run_code',
+]
 
-// DSH 的保留传输名，restrict 不接受，别塞进 mask。
+// DSH 的保留传输名，restrict 不接受。
 const RESERVED_TOOL_NAMES = new Set(['run_code'])
 
-// 只留这个 preset 自己注册的工具：把宿主里全局注册的（用户装的 CAD 之类的）屏蔽掉。
+// 在导师 agent 上摘掉绕过证据预算的工具。
 //
-// 必须在 agent 作用域里做——DSH 的 tools.restrict() 明确拒绝非 scoped 的调用
-// （"a context-global restriction would mask every agent"）。所以挂 agent/created，
-// 在 agent 就绪后对它自己下手。再加一道保险：只对真有 tutor_status 的 agent 动手，
-// 万一 scoped 分发没按 scope 过滤，也不会牵连别的模式。
-function installGlobalToolMask(ctx) {
-  const hostTools = ctx.get('tools')
-  if (hostTools === undefined || typeof hostTools.schemas !== 'function') {
-    console.log('[repo-tutor] focusedTools: 拿不到全局工具清单，跳过全局工具屏蔽')
-    return
-  }
-
+// 两个必须记住的限制：
+//  1. tools.restrict() 只接受 agent 作用域（源码里明确拒绝 context-global 调用），
+//     所以挂 agent/created，在 agent 就绪后对它自己下手。
+//  2. restrict 会把未知名字和 scope-local 名字当成错误。所以只能 deny「这个 agent
+//     确实看得见」的名字——别想着靠它清掉所有全局工具（比如用户自己装的 CAD 插件），
+//     那条路在这里走不通，也没有必要：CAD 工具读不了源码。
+function installEvidenceFirewall(ctx) {
   ctx.on('agent/created', (payload) => {
     const agentCtx = payload?.agent?.ctx
     const tools = agentCtx?.tools
-    if (tools === undefined || typeof tools.restrict !== 'function') {
-      console.log('[repo-tutor] focusedTools: 这个 agent 作用域没有 tools.restrict，跳过')
+    if (tools === undefined || typeof tools.restrict !== 'function' || typeof tools.schemas !== 'function') {
+      console.log('[repo-tutor] blockBypassTools: 这个 agent 作用域没有 tools.restrict/schemas，跳过')
       return
     }
-    // 只处理导师模式的 agent。
+    // 只处理导师模式的 agent：别的模式的 agent 不该被我们动。
     if (tools.get('tutor_status') === undefined) {
       return
     }
 
-    let deny
+    let visible
     try {
-      // 不带 scope 的 schemas() 是全局视图。
-      deny = hostTools
-        .schemas()
-        .map((schema) => schema.name)
-        .filter((name) => !GLOBAL_TOOL_KEEP.has(name) && !RESERVED_TOOL_NAMES.has(name))
+      visible = new Set(tools.schemas().map((schema) => schema.name))
     } catch (error) {
-      console.log(`[repo-tutor] focusedTools: 读全局工具清单失败：${error.message}`)
+      console.log(`[repo-tutor] blockBypassTools: 读工具清单失败：${error.message}`)
       return
     }
+
+    const deny = EVIDENCE_BYPASS_TOOLS.filter(
+      (name) => visible.has(name) && !RESERVED_TOOL_NAMES.has(name),
+    )
     if (deny.length === 0) {
       return
     }
 
     try {
       tools.restrict({ deny })
-      console.log(`[repo-tutor] focusedTools: 这个会话屏蔽了 ${deny.length} 个全局工具`)
+      console.log(`[repo-tutor] blockBypassTools: 摘掉了 ${deny.join(', ')}`)
     } catch (error) {
-      console.log(`[repo-tutor] focusedTools: 屏蔽失败：${error.message}`)
+      console.log(`[repo-tutor] blockBypassTools: 摘除失败：${error.message}`)
     }
   })
 }
@@ -239,11 +253,11 @@ export function apply(ctx, config) {
   const alwaysOn = config?.alwaysOn === true
   const guidance = `## Repo Tutor\n\n${alwaysOn ? GUIDANCE_ALWAYS : GUIDANCE_TRIGGER}${GUIDANCE_BODY}`
 
-  // focusedTools：把宿主里全局注册的工具（比如用户自己装的 CAD 插件）从本模式里屏蔽掉。
-  // 导师模式的工具面只应该由这个 preset 自己决定，不然"边界"就只是嘴上说说。
-  // 只屏蔽全局工具，preset 自己注册的（tutor_* / ask_user_question）不受影响。
-  if (config?.focusedTools === true) {
-    installGlobalToolMask(ctx)
+  // blockBypassTools：把宿主全局注册的「读文件 / 执行命令 / 上网 / 派子代理」从导师 agent
+  // 上摘掉，保证证据预算在任何组合下都堵得住。
+  // 注意它清不掉无关的全局插件（比如你自己装的 CAD）——DSH 的 restrict 只认具体的工具名。
+  if (config?.blockBypassTools === true) {
+    installEvidenceFirewall(ctx)
   }
 
   // 一个仓库根一份 Core。同一个仓库的两个对话共享同一份学习状态，

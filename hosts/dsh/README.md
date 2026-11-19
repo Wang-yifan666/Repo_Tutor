@@ -37,11 +37,14 @@ node scripts/install-preset.mjs      # 装到 $DSH_HOME/.agent-presets/repo-tuto
 | 改代码 | 能改 | 没有任何写工具 |
 | 提问 | `ask_user_question` | 同左，每个单元默认一次检查 |
 | 教学 prompt | 一小节，条件触发 | 常驻，`alwaysOn: true` |
-| 全局工具 | 全部可见 | 屏蔽（`focusedTools: true`），工具面只由 preset 决定 |
+| 全局工具 | 全部可见 | 读文件/执行命令/上网/派子代理类的全局工具会被摘掉（`blockBypassTools`） |
 
-`focusedTools` 的实现在 `agent/created` 上：DSH 的 `tools.restrict()` 拒绝非
-agent 作用域的调用（"a context-global restriction would mask every agent"），
-所以在每个导师 agent 就绪后对它自己下手，并且只对真有 `tutor_status` 的 agent 动手。
+`blockBypassTools` 的实现在 `agent/created` 上，原因有两个：DSH 的 `tools.restrict()`
+只接受 agent 作用域（源码里明确拒绝 context-global 调用），而且它把未知名字和
+scope-local 名字当成错误。所以只 deny「这个 agent 确实看得见」的那批会绕过证据预算的工具。
+
+它**清不掉无关的全局插件**——比如你自己装的 `dsh-cad` 会照样出现在工具表里。
+那种要挡得从 profile 里卸载，而且也没必要：CAD 工具读不了源码。
 
 工作原理不是改 DSH：preset 就是一个 `agent.cordis.yml`，里面只装 `persona` +
 `repo-tutor` 插件行 + `tool-ask-user` + compaction 一组。没有 fs / shell / web /
