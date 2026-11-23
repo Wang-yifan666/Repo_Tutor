@@ -86,8 +86,9 @@ macOS 不发：没人在真机上跑过，就不宣称支持 —— `platforms.c
 `0.1.0-rc.1` 是预发布版，只挂在 `next` 标签上，装的时候要写出来：
 
 ```sh
-dsh plugin --profile <name> add repo-tutor-dsh@next       # Bundle 模式，平台 Core 一起装下来
-npx repo-tutor-dsh@next                                    # 装导师模式
+dsh plugin --profile <name> add repo-tutor-dsh@next       # Bundle 模式，平台 Core 一起装下来；
+                                                          # 0.2+ 上导师模式也随这条声明一起出现
+npx repo-tutor-dsh@next                                    # 仅 0.1.x：装导师模式
 npx repo-tutor-dsh@next --core /path/to/repo-tutor-core     # 或者自己管 Core
 npx repo-tutor-dsh@next --status | --uninstall | --version | --help
 ```

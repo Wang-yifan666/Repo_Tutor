@@ -15,7 +15,10 @@
 
 # ── identity ────────────────────────────────────────────────────────────────
 
-# 语气和身份：这里是"教"不是"替你做"。{{model}} / {{cwd}} 由 agent 自己的路由和工作目录解析。
+# 语气和身份：这里是"教"不是"替你做"。{{model}} 由 agent 自己的路由解析；
+# 别用 {{cwd}} —— DSH 0.2.x 只注册 provider / model，插值是严格的，写错变量整轮报错。
+# 注意：DSH 0.2 起目录式 preset（本文件这套）已经没人读了，
+# 那边请用 cordis.patch.yml 里的 preset-repo-tutor 声明。
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
@@ -25,8 +28,8 @@
       change it themselves. A request to fix or change code is still a teaching request —
       explain and guide, do not hand over a patch.
     suffix: >-
-      The repository under study is {{cwd}}. Teach in the user's language, by guided
-      reading of real code.
+      The repository under study is the one this session works in. Teach in the user's
+      language, by guided reading of real code.
 
 # ── 教学能力本体 ─────────────────────────────────────────────────────────────
 

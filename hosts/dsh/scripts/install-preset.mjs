@@ -475,3 +475,9 @@ log('')
 log('启动 DSH 后在模式选择器里选「导师模式」。')
 log('显示名和说明立刻生效（roster 每次重读目录），但行为要重启 DSH 进程：')
 log('preset 一旦被某个会话挂载过，这份组合就钉在那个进程里，直到进程退出。')
+log('')
+// 这条目录式 preset 在 DSH 0.2 之后没有任何代码去读了；0.2 的导师模式由
+// cordis.patch.yml 里的 preset-repo-tutor 声明提供，装 bundle 就会带上。
+warn('DSH 0.2 及以后不再读取 $DSH_HOME/.agent-presets/：那边请用 `dsh plugin --profile <p> add repo-tutor-dsh`，')
+warn('导师模式随 bundle 声明一起出现，不需要再跑这个安装器。本工具只对 0.1.x 有意义。')
+

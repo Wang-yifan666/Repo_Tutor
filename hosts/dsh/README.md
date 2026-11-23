@@ -19,15 +19,16 @@ Repo Tutor 的 DSH 插件包：11 个 `tutor_*` 工具、一节教学 prompt、�
 | Linux x64 | 通过（WSL2 Ubuntu 24.04，ctest 9/9，`ldd` 只剩 libc/ld/vdso，client-smoke 走完协议） | **没有**：DSH 在 Linux 上没装过 | `@repo-tutor/core-linux-x64` |
 | macOS arm64 | 没有 | 没有 | 不发 |
 
-DSH 版本：只在 **`0.1.6-alpha.1`** 上跑过。`engines.dsh` 声明的是
-`>=0.1.6-alpha.1 <0.2.0`，那是一个窗口，不是测试范围。Node：实测 `22.19.0`，
+DSH 版本：**`0.1.6-alpha.1` 与 `0.2.3-alpha.2`** 上跑过整轮教学。两者的 preset 机制不同，
+安装方式也不同（见「装」）；`engines.dsh` 写的是 `>=0.1.6-alpha.1 <0.2.0 || >=0.2.3-alpha.2 <0.3.0`，
+中间的 0.1.7 / 0.2.0–0.2.2 没测。Node：实测 `22.19.0`，
 `engines.node` 是 `^22.19.0 || >=24.0.0`。
 
 ## 你需要什么
 
 | 需要 | 说明 |
 |---|---|
-| DSH | `engines.dsh` 窗口内，当前验证于 `0.1.6-alpha.1` |
+| DSH | `0.1.6-alpha.1` 或 `0.2.3-alpha.2`（两者都验过；中间的版本没测） |
 | Node | `^22.19.0 \|\| >=24.0.0`（跟 DSH 一致） |
 | `repo-tutor-core` | 由平台包提供；只有 Windows x64 / Linux x64 有 |
 
@@ -44,19 +45,28 @@ DSH 版本：只在 **`0.1.6-alpha.1`** 上跑过。`engines.dsh` 声明的是
 
 ## 装
 
-两条入口，随便挑一条（也可以都装）。**预发布版本必须带 `@next`**：
-`0.1.0-rc.1` 不在 `latest` 标签上，不写标签的话 npm 会报「没有匹配版本」。
+**预发布版本必须带 `@next`**：`0.1.0-rc.1` 不在 `latest` 标签上，不写标签的话 npm 会报「没有匹配版本」。
 
-**1) Bundle 模式** —— 让插件行随 profile 启动：
+### DSH 0.2 及以后（推荐）
+
+一条命令，插件和「导师模式」一起到位：
 
 ```sh
 dsh plugin --profile web add repo-tutor-dsh@next
 ```
 
-包声明了 `dsh.bundle.patch`，`dsh plugin add` 之后会自动进 `dsh.profile.bundles`，
-平台包作为 optionalDependency 一起装下来，**不需要设 `REPO_TUTOR_CORE`**。
+包的 `cordis.patch.yml` 声明了两行：host 插件行（11 个工具、教学 prompt、`/tutor` 命令，
+标准模式下也能调），以及 `preset-repo-tutor`（`@deepseek-ai/dsh-agent-preset` 行，id 是
+`repo-tutor`）。平台包作为 optionalDependency 一起装下来，**不需要设 `REPO_TUTOR_CORE`**。
+装完重启 DSH 进程，模式选择器里就有「导师模式」。
 
-**2) 导师模式（Preset）** —— 装成一个只教不改的模式：
+preset 里那条插件行写的是**包名** `repo-tutor-dsh`：0.2 的 preset 行按「声明它的组合」的
+解析基准解析，也就是用户 profile 的 `node_modules`，包名看得见。别改成相对路径 —— 那会指向
+profile 目录本身。
+
+### DSH 0.1.x
+
+那个版本的 preset 是目录式的，要跑安装器：
 
 ```sh
 npx repo-tutor-dsh@next --core /path/to/repo-tutor-core   # 用户自己管 Core
@@ -68,6 +78,7 @@ npx repo-tutor-dsh@next                                   # 或者：把平台�
 写进持久化配置迟早失效；复制之后 preset 目录能整体搬走、也不依赖 node_modules。
 
 装进 `$DSH_HOME/.agent-presets/repo-tutor/`，重启 DSH 后在模式选择器里选「导师模式」。
+**0.2 起这个目录没有任何代码去读了**，安装器会在结尾提醒你改用 bundle。
 
 ### 导师模式（第五个模式）
 
@@ -113,7 +124,8 @@ npx repo-tutor-dsh@next --help
    `__isoc23_strtoul@2.38`、`arc4random@2.36`、`_dl_find_object@2.35`。
    也就是说 Ubuntu 22.04（glibc 2.35）、Debian 12（2.36）上用不了这个包。
    修法是让 CI 在 `ubuntu-22.04` 上重新出包（见下），不是改代码。
-3. **DSH 0.2.x 完全没测。** `engines.dsh` 上限写到 `<0.2.0` 是因为没结论，不是因为测过。
+3. **DSH 0.1.7 与 0.2.0–0.2.2 没测。** `engines.dsh` 写成两段是因为只验过两端的机制：
+   0.1.6 用目录式 preset，0.2.3 用 bundle 声明式，中间没有样本。
 4. **Linux 上没跑过 DSH 端到端。** Core 层面（ctest、协议、client-smoke）是通的，
    但「插件 + DSH + 导师模式」这条链只在 Windows 上走过。
 5. **没有 Conversation Node UI。** 输出走工具结果和 `/tutor` 命令，没有自定义渲染卡片。
@@ -240,12 +252,12 @@ src/index.js                       插件本体（工具 / prompt 小节 / /tuto
 src/core-client.mjs                spawn core + 逐行 JSON-RPC
 src/platform-core.mjs              平台包解析（插件和安装器共用）
 policies/tutor-prompt.md           教学 prompt 正文
-preset/                            导师模式的组合模板
+preset/                            0.1.x 的目录式组合模板（0.2 起没人读，只为安装器保留）
 scripts/install-preset.mjs         导师模式安装器（bin: repo-tutor-dsh）
 scripts/verify-package.mjs         发布前自检（npm pack + 解包 + 接线断言）
 scripts/release-check.mjs          发布自检（版本 / 依赖表 / 隔离打包 / SHA-256 / dry-run）
 scripts/make-platform-packages.mjs 生成平台包
-cordis.patch.yml                   bundle 层：插一行插件
+cordis.patch.yml                   bundle 层：插 host 行 + 声明 preset-repo-tutor
 platforms.config.json              平台与 scope 配置（依赖表从这里生成）
 LICENSE / THIRD-PARTY-NOTICES.md   许可证，以及静态链接进来的 C++ 运行时归属
 ```
@@ -265,16 +277,18 @@ npm run verify
 仓库里还有更重的验收（都在临时目录里跑，不碰真实 `$DSH_HOME`）：
 
 ```sh
+node hosts/dsh/test/preset-dsh02.mjs          # DSH 0.2+：bundle 声明的 preset 真的能起、能跑完一轮
 node hosts/dsh/test/installer-lifecycle.mjs   # 重复安装 / 用户改动 / 升级 / 卸载
 node hosts/dsh/test/platform-core.mjs         # 平台包解析、协议握手、缺包报错
-node hosts/dsh/test/preset-scope.mjs          # 作用域：全局视图没有 Tutor 工具，agent 上才有
-node hosts/dsh/test/preset-negative.mjs       # 破坏 preset 入口 → 工具确实不可调用
-node hosts/dsh/test/isolated-platform.mjs     # tarball 装进隔离 DSH_HOME，Bundle 与 Preset 各跑一轮
+node hosts/dsh/test/preset-scope.mjs          # 作用域：全局视图没有 Tutor 工具，agent 上才有（0.1.x）
+node hosts/dsh/test/preset-negative.mjs       # 破坏 preset 入口 → 工具确实不可调用（0.1.x）
+node hosts/dsh/test/isolated-platform.mjs     # tarball 装进隔离 DSH_HOME，Bundle 与 Preset 各跑一轮（0.1.x）
 BUILD=build/rc-linux bash hosts/dsh/test/linux-native.sh   # WSL / Linux 上的原生产出验证
 ```
 
-前几个需要 `DSH_HARNESS`（`isolated-platform.mjs` 还要凭据和模型），缺条件时打印
-`SKIPPED` 并以 0 退出。
+需要 DSH 的几项都读 `DSH_HARNESS`；`preset-dsh02.mjs` 和 `isolated-platform.mjs` 还要凭据和模型。
+`preset-scope` / `preset-negative` / `isolated-platform` 走的是 0.1.x 的目录式 preset，在 0.2+
+的 checkout 上会自动 `SKIPPED` 并以 0 退出，别把那个绿当成通过。
 
 ## 还没做：Conversation Node
 

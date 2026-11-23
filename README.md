@@ -87,8 +87,9 @@ for it — `platforms.config.json` marks `darwin-arm64` as `publish: false`.
 `0.1.0-rc.1` is a prerelease living on the `next` dist-tag, so installs have to say so:
 
 ```sh
-dsh plugin --profile <name> add repo-tutor-dsh@next        # Bundle mode; pulls the platform Core
-npx repo-tutor-dsh@next                                    # install the Tutor mode
+dsh plugin --profile <name> add repo-tutor-dsh@next        # Bundle mode; pulls the platform Core.
+                                                           # on dsh 0.2+ this also declares the Tutor mode
+npx repo-tutor-dsh@next                                    # dsh 0.1.x only: install the Tutor mode
 npx repo-tutor-dsh@next --core /path/to/repo-tutor-core     # or bring your own Core
 npx repo-tutor-dsh@next --status | --uninstall | --version | --help
 ```

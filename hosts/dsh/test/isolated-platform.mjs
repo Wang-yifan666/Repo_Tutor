@@ -40,6 +40,16 @@ for (const required of [cliEntry, tsxEntry, tsconfig, credentials]) {
   }
 }
 
+// 这条验收走的是「目录式 preset + 安装器」，属于 DSH 0.1.x；0.2 起 preset 由 bundle 声明，
+// 对应的是 hosts/dsh/test/preset-dsh02.mjs。
+{
+  const version = JSON.parse(readFileSync(join(harness, 'package.json'), 'utf8')).version
+  if (!/^0\.1\./.test(version)) {
+    console.log(`SKIPPED: this test covers the 0.1.x directory preset, dsh is ${version} (see preset-dsh02.mjs)`)
+    process.exit(0)
+  }
+}
+
 const suffix = `${process.platform}-${process.arch}`
 const exeName = isWindows ? 'repo-tutor-core.exe' : 'repo-tutor-core'
 const corePath = process.env.REPO_TUTOR_CORE || join(repoRoot, 'build', isWindows ? 'dev-mingw' : 'dev', 'apps', 'repo-tutor-core', exeName)

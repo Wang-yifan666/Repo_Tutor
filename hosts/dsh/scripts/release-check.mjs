@@ -387,7 +387,10 @@ if (runDryRun) {
       tag === null ? 'npm printed no tag line' : `npm printed tag "${tag[1]}"`,
     )
     // npm 在发布时会「顺手修正」manifest；被修正过的包发出去就不是我们审过的那个了。
-    const warnings = text.split('\n').filter((line) => line.includes('npm warn publish'))
+    // 只盯修正类的告警 —— 未登录之类的提示与包内容无关。
+    const warnings = text
+      .split('\n')
+      .filter((line) => line.includes('npm warn publish') && /auto-corrected|errors corrected|was cleaned|corrected/i.test(line))
     check(warnings.length === 0, `${label} needs no manifest auto-correction`, warnings.join('\n      '))
   }
 }

@@ -27,6 +27,15 @@ if (harness === undefined || harness === '') {
 const cliEntry = join(harness, 'apps', 'cli', 'src', 'bin.ts')
 const tsxEntry = join(harness, 'node_modules', 'tsx', 'dist', 'esm', 'index.mjs')
 const tsconfig = join(harness, 'tsconfig.json')
+// 这个用例验的是 $DSH_HOME/.agent-presets 那套目录式 preset；DSH 0.2 起没人读了，
+// 那边换成 hosts/dsh/test/preset-dsh02.mjs。
+{
+  const version = JSON.parse(readFileSync(join(harness, 'package.json'), 'utf8')).version
+  if (!/^0\.1\./.test(version)) {
+    console.log(`SKIPPED: directory presets belong to dsh 0.1.x, this checkout is ${version} (see preset-dsh02.mjs)`)
+    process.exit(0)
+  }
+}
 const exeName = isWindows ? 'repo-tutor-core.exe' : 'repo-tutor-core'
 const corePath = process.env.REPO_TUTOR_CORE || join(repoRoot, 'build', isWindows ? 'dev-mingw' : 'dev', 'apps', 'repo-tutor-core', exeName)
 for (const required of [cliEntry, tsxEntry, tsconfig, corePath]) {
